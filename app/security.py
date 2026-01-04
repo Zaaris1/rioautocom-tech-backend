@@ -4,6 +4,7 @@ import os
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
+# PBKDF2: compatível e estável no Render (Python 3.13)
 pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME")

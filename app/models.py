@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -15,6 +15,7 @@ class User(Base):
     role = Column(String, nullable=False)
     must_change_password = Column(Boolean, default=True)
     active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Store(Base):
     __tablename__ = "stores"
@@ -22,6 +23,7 @@ class Store(Base):
     name = Column(String, nullable=False)
     cnpj = Column(String, unique=True, nullable=False)
     active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class ClientAccess(Base):
     __tablename__ = "client_access"
@@ -41,8 +43,8 @@ class Ticket(Base):
     local = Column(String, nullable=True)
     problem = Column(Text, nullable=False)
 
-    type = Column(String, nullable=False)
-    priority = Column(String, nullable=False)
+    type = Column(String, nullable=False)      # Reparo / Instalação / Serviço / Visita técnica
+    priority = Column(String, nullable=False)  # Normal / Urgente
 
     status = Column(String, nullable=False, default="ABERTO")
     assigned_tech_id = Column(String, ForeignKey("users.id"), nullable=True)
@@ -50,7 +52,12 @@ class Ticket(Base):
     assigned_at = Column(DateTime(timezone=True), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=True)
+
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+Index("ix_tickets_store_id", Ticket.store_id)
+Index("ix_tickets_status", Ticket.status)
+Index("ix_tickets_assigned_tech_id", Ticket.assigned_tech_id)
 
 class TicketUpdate(Base):
     __tablename__ = "ticket_updates"
@@ -58,9 +65,11 @@ class TicketUpdate(Base):
     ticket_id = Column(String, ForeignKey("tickets.id"), nullable=False)
     created_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    event_type = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)  # CREATE, COMMENT, STATUS_CHANGE, ASSIGN, UNASSIGN, EDIT, CLOSE, CANCEL
     note = Column(Text, nullable=True)
-    payload_json = Column(Text, nullable=True)
+    payload_json = Column(Text, nullable=True)  # string JSON
+
+Index("ix_ticket_updates_ticket_id", TicketUpdate.ticket_id)
 
 class TicketClosure(Base):
     __tablename__ = "ticket_closures"

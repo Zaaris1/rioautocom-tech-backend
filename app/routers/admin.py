@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, Store, ClientAccess, ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT
-from app.schemas import UserCreate, UserOut, StoreCreate, StoreOut
+from app.schemas import (
+    UserCreate, UserUpdate, UserOut,
+    StoreCreate, StoreUpdate, StoreOut,
+)
 from app.security import hash_password
 from app.deps import require_roles
 
@@ -14,6 +17,7 @@ def _assert_role(role: str):
     if role not in (ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT):
         raise HTTPException(status_code=400, detail="Role inválida")
 
+# -------- Users --------
 @router.post("/users", response_model=UserOut)
 def create_user(body: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
     _assert_role(body.role)
@@ -46,6 +50,25 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_roles(RO
     rows = db.query(User).order_by(User.role, User.username).all()
     return [UserOut(id=u.id, username=u.username, role=u.role, must_change_password=u.must_change_password, active=u.active) for u in rows]
 
+@router.patch("/users/{user_id}", response_model=UserOut)
+def update_user(user_id: str, body: UserUpdate, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if body.password is not None:
+        u.password_hash = hash_password(body.password)
+    if body.must_change_password is not None:
+        u.must_change_password = body.must_change_password
+    if body.active is not None:
+        u.active = body.active
+
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return UserOut(id=u.id, username=u.username, role=u.role, must_change_password=u.must_change_password, active=u.active)
+
+# -------- Stores --------
 @router.post("/stores", response_model=StoreOut)
 def create_store(body: StoreCreate, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
     if db.query(Store).filter(Store.cnpj == body.cnpj).first():
@@ -54,13 +77,35 @@ def create_store(body: StoreCreate, db: Session = Depends(get_db), _: User = Dep
     db.add(s)
     db.commit()
     db.refresh(s)
-    return StoreOut(id=s.id, name=s.name, cnpj=s.cnpj)
+    return StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active)
 
 @router.get("/stores", response_model=list[StoreOut])
 def list_stores(db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
-    rows = db.query(Store).filter(Store.active == True).order_by(Store.name).all()
-    return [StoreOut(id=s.id, name=s.name, cnpj=s.cnpj) for s in rows]
+    rows = db.query(Store).order_by(Store.active.desc(), Store.name).all()
+    return [StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active) for s in rows]
 
+@router.patch("/stores/{store_id}", response_model=StoreOut)
+def update_store(store_id: str, body: StoreUpdate, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
+    s = db.query(Store).filter(Store.id == store_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Loja não encontrada")
+    if body.cnpj is not None and body.cnpj != s.cnpj:
+        if db.query(Store).filter(Store.cnpj == body.cnpj).first():
+            raise HTTPException(status_code=409, detail="CNPJ já cadastrado")
+
+    if body.name is not None:
+        s.name = body.name
+    if body.cnpj is not None:
+        s.cnpj = body.cnpj
+    if body.active is not None:
+        s.active = body.active
+
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active)
+
+# -------- Client ↔ Store links --------
 @router.post("/clients/{client_id}/stores/{store_id}")
 def grant_store_access(client_id: str, store_id: str, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
     user = db.query(User).filter(User.id == client_id).first()
@@ -69,8 +114,17 @@ def grant_store_access(client_id: str, store_id: str, db: Session = Depends(get_
     store = db.query(Store).filter(Store.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
+
     exists = db.query(ClientAccess).filter(ClientAccess.user_id==client_id, ClientAccess.store_id==store_id).first()
     if not exists:
         db.add(ClientAccess(user_id=client_id, store_id=store_id))
+        db.commit()
+    return {"ok": True}
+
+@router.delete("/clients/{client_id}/stores/{store_id}")
+def revoke_store_access(client_id: str, store_id: str, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
+    row = db.query(ClientAccess).filter(ClientAccess.user_id==client_id, ClientAccess.store_id==store_id).first()
+    if row:
+        db.delete(row)
         db.commit()
     return {"ok": True}
