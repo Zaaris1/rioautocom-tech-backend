@@ -1,18 +1,39 @@
-# RioAutocom Tech - Backend MVP v3 (Produção)
 
-Backend completo do MVP.
+# RioAutocom Tech - Backend MVP v4
+
+MVP completo (endpoints + RBAC) para:
+- Admin Web
+- App Técnico
+- App Cliente (consulta)
 
 ## Stack
-FastAPI + PostgreSQL + JWT
+- FastAPI
+- PostgreSQL (Neon)
+- SQLAlchemy
+- JWT
 
-## Usuário Admin inicial
-login: admin
-senha: 040126
+## Admin inicial
+username: admin
+password: 040126
 
-## Regras
-- Cliente: apenas consulta
-- Técnico: só conclui com parecer obrigatório
-- Admin: controle total
+## Rodar local
+1) python -m venv .venv
+2) .venv\Scripts\activate  (Windows)
+3) pip install -r requirements.txt
+4) copie .env.example -> .env e ajuste DATABASE_URL/SECRET_KEY
+5) uvicorn app.main:app --reload
 
-## Deploy
-Compatível com Render + Neon (guia será enviado após o código).
+## Deploy (Render)
+Build: pip install -r requirements.txt
+Start: uvicorn app.main:app --host 0.0.0.0 --port 10000
+
+Env vars mínimas:
+- DATABASE_URL
+- SECRET_KEY
+- ALGORITHM=HS256
+- ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+## Notas
+- Cliente loga com CNPJ como `username` e senha inicial `402365` (admin cria cliente).
+- Técnico loga com `username` e senha definida pelo admin.
+- Técnico só conclui com parecer obrigatório (>=15 chars).
