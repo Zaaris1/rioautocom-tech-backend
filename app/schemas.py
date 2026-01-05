@@ -62,7 +62,6 @@ class TicketPriority(str, Enum):
     NORMAL = "NORMAL"
     URGENTE = "URGENTE"
 
-# (Opcional) se você quiser padronizar também o status no schema:
 class TicketStatus(str, Enum):
     ABERTO = "ABERTO"
     ATRIBUIDO = "ATRIBUIDO"
@@ -82,10 +81,11 @@ class TicketCreate(BaseModel):
 class TicketOut(BaseModel):
     id: str
     store_id: str
-    status: str  # ou TicketStatus, se você quiser padronizar
+    store_name: Optional[str] = None  # ✅ NOVO
+    status: str
     problem: str
-    type: str     # ou TicketType, se você quiser padronizar
-    priority: str # ou TicketPriority, se você quiser padronizar
+    type: str
+    priority: str
     requester_name: Optional[str] = None
     local: Optional[str] = None
     assigned_tech_id: Optional[str] = None
