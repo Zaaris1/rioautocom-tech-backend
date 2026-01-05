@@ -1,4 +1,4 @@
-
+from enum import Enum
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
@@ -51,22 +51,41 @@ class StoreOut(BaseModel):
     cnpj: str
     active: bool
 
+# ---------- Tickets (Enums) ----------
+class TicketType(str, Enum):
+    SUPORTE = "SUPORTE"
+    VISITA = "VISITA"
+    MANUTENCAO = "MANUTENCAO"
+    REPARO = "REPARO"
+
+class TicketPriority(str, Enum):
+    NORMAL = "NORMAL"
+    URGENTE = "URGENTE"
+
+# (Opcional) se você quiser padronizar também o status no schema:
+class TicketStatus(str, Enum):
+    ABERTO = "ABERTO"
+    ATRIBUIDO = "ATRIBUIDO"
+    EM_ATENDIMENTO = "EM_ATENDIMENTO"
+    PENDENTE = "PENDENTE"
+    CONCLUIDO = "CONCLUIDO"
+
 # ---------- Tickets ----------
 class TicketCreate(BaseModel):
     store_id: str
     requester_name: Optional[str] = None
     local: Optional[str] = None
     problem: str = Field(min_length=5)
-    type: str
-    priority: str
+    type: TicketType
+    priority: TicketPriority
 
 class TicketOut(BaseModel):
     id: str
     store_id: str
-    status: str
+    status: str  # ou TicketStatus, se você quiser padronizar
     problem: str
-    type: str
-    priority: str
+    type: str     # ou TicketType, se você quiser padronizar
+    priority: str # ou TicketPriority, se você quiser padronizar
     requester_name: Optional[str] = None
     local: Optional[str] = None
     assigned_tech_id: Optional[str] = None
