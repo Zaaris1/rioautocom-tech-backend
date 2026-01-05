@@ -1,6 +1,8 @@
 import uuid, json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
@@ -21,7 +23,14 @@ router = APIRouter()
 VALID_STATUSES = {"ABERTO","ATRIBUIDO","EM_ATENDIMENTO","PENDENTE","CONCLUIDO","CANCELADO"}
 
 
-def add_update(db: Session, ticket_id: str, user_id: str, event_type: str, note: str | None = None, payload: dict | None = None):
+def add_update(
+    db: Session,
+    ticket_id: str,
+    user_id: str,
+    event_type: str,
+    note: Optional[str] = None,
+    payload: Optional[dict] = None
+):
     db.add(TicketUpdate(
         id=str(uuid.uuid4()),
         ticket_id=ticket_id,
@@ -33,7 +42,10 @@ def add_update(db: Session, ticket_id: str, user_id: str, event_type: str, note:
 
 
 def ensure_store_access_for_client(db: Session, user: User, store_id: str):
-    ok = db.query(ClientAccess).filter(ClientAccess.user_id == user.id, ClientAccess.store_id == store_id).first()
+    ok = db.query(ClientAccess).filter(
+        ClientAccess.user_id == user.id,
+        ClientAccess.store_id == store_id
+    ).first()
     if not ok:
         raise HTTPException(status_code=403, detail="Sem permissão para esta loja")
 
@@ -51,7 +63,11 @@ def ensure_assigned_to_user(ticket: Ticket, user: User):
 
 # ---------- Create (ADMIN only) ----------
 @router.post("/", response_model=TicketOut)
-def create_ticket(body: TicketCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_ticket(
+    body: TicketCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     if user.role != ROLE_ADMIN:
         raise HTTPException(status_code=403, detail="Apenas admin cria chamado")
 
@@ -59,6 +75,7 @@ def create_ticket(body: TicketCreate, db: Session = Depends(get_db), user: User 
     if not store:
         raise HTTPException(status_code=404, detail="Loja não encontrada/ativa")
 
+    # enums ou string
     ticket_type = body.type.value if hasattr(body.type, "value") else body.type
     ticket_priority = body.priority.value if hasattr(body.priority, "value") else body.priority
 
@@ -98,17 +115,19 @@ def list_tickets(
     user: User = Depends(get_current_user),
     open_only: bool = Query(False, description="Somente ABERTO e sem técnico (fila)"),
     mine_only: bool = Query(False, description="Somente tickets do técnico logado"),
-    status: str | None = Query(None, description="Filtrar por status"),
+    status: Optional[str] = Query(None, description="Filtrar por status"),
     limit: int = Query(200, ge=1, le=500),
 ):
     if status and status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="status inválido")
 
-    # ✅ query com Store para trazer o nome
+    # traz Store.name
     q = db.query(Ticket, Store.name).join(Store, Store.id == Ticket.store_id)
 
     if user.role == ROLE_CLIENT:
-        q = q.join(ClientAccess, ClientAccess.store_id == Ticket.store_id).filter(ClientAccess.user_id == user.id)
+        q = q.join(ClientAccess, ClientAccess.store_id == Ticket.store_id).filter(
+            ClientAccess.user_id == user.id
+        )
 
     if user.role == ROLE_TECH:
         if open_only:
@@ -134,13 +153,18 @@ def list_tickets(
             assigned_tech_id=t.assigned_tech_id,
             opened_at=t.opened_at.isoformat() if t.opened_at else None,
             updated_at=t.updated_at.isoformat() if t.updated_at else None,
-        ) for (t, store_name) in rows
+        )
+        for (t, store_name) in rows
     ]
 
 
-# ---------- Get detail (✅ devolve {ticket, updates} para bater com frontend atual) ----------
+# ---------- Get detail (devolve {ticket, updates} p/ bater com frontend) ----------
 @router.get("/{ticket_id}")
-def get_ticket(ticket_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def get_ticket(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
@@ -160,7 +184,10 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db), user: User = Depen
         resolution_text=closure.resolution_text if closure else None,
     )
 
-    rows = db.query(TicketUpdate).filter(TicketUpdate.ticket_id == ticket_id).order_by(TicketUpdate.created_at.asc()).all()
+    rows = db.query(TicketUpdate).filter(
+        TicketUpdate.ticket_id == ticket_id
+    ).order_by(TicketUpdate.created_at.asc()).all()
+
     updates = [
         TicketUpdateOut(
             id=u.id,
@@ -170,7 +197,8 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db), user: User = Depen
             event_type=u.event_type,
             note=u.note,
             payload_json=u.payload_json,
-        ) for u in rows
+        )
+        for u in rows
     ]
 
     return {"ticket": ticket, "updates": updates}
@@ -178,14 +206,21 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db), user: User = Depen
 
 # ---------- Updates (timeline) ----------
 @router.get("/{ticket_id}/updates", response_model=list[TicketUpdateOut])
-def list_updates(ticket_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_updates(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
 
     ensure_can_view_ticket(db, user, t)
 
-    rows = db.query(TicketUpdate).filter(TicketUpdate.ticket_id == ticket_id).order_by(TicketUpdate.created_at.asc()).all()
+    rows = db.query(TicketUpdate).filter(
+        TicketUpdate.ticket_id == ticket_id
+    ).order_by(TicketUpdate.created_at.asc()).all()
+
     return [
         TicketUpdateOut(
             id=u.id,
@@ -195,13 +230,19 @@ def list_updates(ticket_id: str, db: Session = Depends(get_db), user: User = Dep
             event_type=u.event_type,
             note=u.note,
             payload_json=u.payload_json,
-        ) for u in rows
+        )
+        for u in rows
     ]
 
 
 # ---------- Assign ----------
 @router.post("/{ticket_id}/assign", response_model=TicketOut)
-def assign_ticket(ticket_id: str, body: AssignRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def assign_ticket(
+    ticket_id: str,
+    body: Optional[AssignRequest] = Body(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
@@ -215,9 +256,16 @@ def assign_ticket(ticket_id: str, body: AssignRequest, db: Session = Depends(get
     old_status = t.status
 
     if user.role == ROLE_ADMIN:
-        if not body.tech_id:
-            raise HTTPException(status_code=400, detail="Admin precisa informar tech_id")
-        tech = db.query(User).filter(User.id == body.tech_id, User.role == ROLE_TECH, User.active == True).first()
+        # Front manda { username } (ou vazio)
+        username = (body.username if body else None)
+        if not username:
+            raise HTTPException(status_code=400, detail="Admin precisa informar username do técnico")
+
+        tech = db.query(User).filter(
+            User.username == username,
+            User.role == ROLE_TECH,
+            User.active == True
+        ).first()
         if not tech:
             raise HTTPException(status_code=404, detail="Técnico não encontrado/ativo")
 
@@ -230,12 +278,13 @@ def assign_ticket(ticket_id: str, body: AssignRequest, db: Session = Depends(get
         db.add(t)
         db.commit()
 
-        add_update(db, t.id, user.id, "ASSIGN", note="Atribuído pelo admin", payload={"tech_id": tech.id})
+        add_update(db, t.id, user.id, "ASSIGN", note="Atribuído pelo admin", payload={"username": tech.username, "tech_id": tech.id})
         if old_status != t.status:
             add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
         db.commit()
 
     elif user.role == ROLE_TECH:
+        # técnico assume (frontend pode mandar vazio)
         if t.assigned_tech_id and t.assigned_tech_id != user.id:
             raise HTTPException(status_code=409, detail="Chamado já atribuído a outro técnico")
 
@@ -243,12 +292,13 @@ def assign_ticket(ticket_id: str, body: AssignRequest, db: Session = Depends(get
         if t.status == "ABERTO":
             t.status = "ATRIBUIDO"
             t.assigned_at = datetime.utcnow()
+
         t.updated_at = datetime.utcnow()
 
         db.add(t)
         db.commit()
 
-        add_update(db, t.id, user.id, "ASSIGN", note="Assumido pelo técnico", payload={"tech_id": user.id})
+        add_update(db, t.id, user.id, "ASSIGN", note="Assumido pelo técnico", payload={"username": user.username, "tech_id": user.id})
         if old_status != t.status:
             add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
         db.commit()
@@ -265,7 +315,12 @@ def assign_ticket(ticket_id: str, body: AssignRequest, db: Session = Depends(get
 
 # ---------- Tech workflow ----------
 @router.post("/{ticket_id}/start", response_model=TicketOut)
-def start_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def start_ticket(
+    ticket_id: str,
+    body: Optional[StatusRequest] = Body(default=None),  # ✅ permite start sem body
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     if user.role != ROLE_TECH:
         raise HTTPException(status_code=403, detail="Apenas técnico")
 
@@ -286,7 +341,8 @@ def start_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_
     db.add(t)
     db.commit()
 
-    add_update(db, t.id, user.id, "STATUS_CHANGE", note=body.note, payload={"from": old, "to": "EM_ATENDIMENTO"})
+    note = (body.message if body else None)  # ✅ frontend manda "message"
+    add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "EM_ATENDIMENTO"})
     db.commit()
 
     store = db.query(Store).filter(Store.id == t.store_id).first()
@@ -302,7 +358,12 @@ def start_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_
 
 
 @router.post("/{ticket_id}/pend", response_model=TicketOut)
-def pend_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def pend_ticket(
+    ticket_id: str,
+    body: Optional[StatusRequest] = Body(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     if user.role != ROLE_TECH:
         raise HTTPException(status_code=403, detail="Apenas técnico")
 
@@ -322,7 +383,8 @@ def pend_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_d
     db.add(t)
     db.commit()
 
-    add_update(db, t.id, user.id, "STATUS_CHANGE", note=body.note, payload={"from": old, "to": "PENDENTE"})
+    note = (body.message if body else None)  # ✅ frontend manda "message"
+    add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "PENDENTE"})
     db.commit()
 
     store = db.query(Store).filter(Store.id == t.store_id).first()
@@ -339,14 +401,20 @@ def pend_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_d
 
 # ---------- Comment (authorized viewers) ----------
 @router.post("/{ticket_id}/comment")
-def comment_ticket(ticket_id: str, body: CommentRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def comment_ticket(
+    ticket_id: str,
+    body: CommentRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Chamado não encontrado")
 
     ensure_can_view_ticket(db, user, t)
 
-    add_update(db, t.id, user.id, "COMMENT", note=body.note)
+    # ✅ frontend manda "message"
+    add_update(db, t.id, user.id, "COMMENT", note=body.message)
     db.commit()
 
     return {"ok": True}
@@ -354,7 +422,12 @@ def comment_ticket(ticket_id: str, body: CommentRequest, db: Session = Depends(g
 
 # ---------- Close (TECH only with mandatory resolution) ----------
 @router.post("/{ticket_id}/close", response_model=TicketOut)
-def close_ticket(ticket_id: str, body: CloseRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def close_ticket(
+    ticket_id: str,
+    body: CloseRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     if user.role != ROLE_TECH:
         raise HTTPException(status_code=403, detail="Apenas técnico")
 
@@ -370,9 +443,11 @@ def close_ticket(ticket_id: str, body: CloseRequest, db: Session = Depends(get_d
     if db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first():
         raise HTTPException(status_code=409, detail="Chamado já concluído")
 
+    parecer = body.parecer.strip()  # ✅ frontend manda "parecer"
+
     db.add(TicketClosure(
         ticket_id=t.id,
-        resolution_text=body.resolution_text.strip(),
+        resolution_text=parecer,
         closed_by_user_id=user.id
     ))
 
@@ -383,7 +458,7 @@ def close_ticket(ticket_id: str, body: CloseRequest, db: Session = Depends(get_d
 
     db.add(t)
 
-    add_update(db, t.id, user.id, "CLOSE", note="Concluído com parecer", payload={"len": len(body.resolution_text.strip())})
+    add_update(db, t.id, user.id, "CLOSE", note="Concluído com parecer", payload={"len": len(parecer)})
     if old != "CONCLUIDO":
         add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old, "to": "CONCLUIDO"})
 
