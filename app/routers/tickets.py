@@ -21,14 +21,7 @@ router = APIRouter()
 VALID_STATUSES = {"ABERTO","ATRIBUIDO","EM_ATENDIMENTO","PENDENTE","CONCLUIDO","CANCELADO"}
 
 
-def add_update(
-    db: Session,
-    ticket_id: str,
-    user_id: str,
-    event_type: str,
-    note: str | None = None,
-    payload: dict | None = None
-):
+def add_update(db: Session, ticket_id: str, user_id: str, event_type: str, note: str | None = None, payload: dict | None = None):
     db.add(TicketUpdate(
         id=str(uuid.uuid4()),
         ticket_id=ticket_id,
@@ -40,10 +33,7 @@ def add_update(
 
 
 def ensure_store_access_for_client(db: Session, user: User, store_id: str):
-    ok = db.query(ClientAccess).filter(
-        ClientAccess.user_id == user.id,
-        ClientAccess.store_id == store_id
-    ).first()
+    ok = db.query(ClientAccess).filter(ClientAccess.user_id == user.id, ClientAccess.store_id == store_id).first()
     if not ok:
         raise HTTPException(status_code=403, detail="Sem permissão para esta loja")
 
@@ -61,11 +51,7 @@ def ensure_assigned_to_user(ticket: Ticket, user: User):
 
 # ---------- Create (ADMIN only) ----------
 @router.post("/", response_model=TicketOut)
-def create_ticket(
-    body: TicketCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
-):
+def create_ticket(body: TicketCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if user.role != ROLE_ADMIN:
         raise HTTPException(status_code=403, detail="Apenas admin cria chamado")
 
@@ -73,8 +59,6 @@ def create_ticket(
     if not store:
         raise HTTPException(status_code=404, detail="Loja não encontrada/ativa")
 
-    # ✅ TicketCreate agora valida automaticamente via Enum no schema.
-    # Aqui a gente salva sempre como string.
     ticket_type = body.type.value if hasattr(body.type, "value") else body.type
     ticket_priority = body.priority.value if hasattr(body.priority, "value") else body.priority
 
@@ -91,7 +75,6 @@ def create_ticket(
         opened_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
-
     db.add(t)
     db.commit()
 
@@ -99,7 +82,7 @@ def create_ticket(
     db.commit()
 
     return TicketOut(
-        id=t.id, store_id=t.store_id, status=t.status,
+        id=t.id, store_id=t.store_id, store_name=store.name, status=t.status,
         problem=t.problem, type=t.type, priority=t.priority,
         requester_name=t.requester_name, local=t.local,
         assigned_tech_id=t.assigned_tech_id,
@@ -121,7 +104,8 @@ def list_tickets(
     if status and status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="status inválido")
 
-    q = db.query(Ticket)
+    # ✅ query com Store para trazer o nome
+    q = db.query(Ticket, Store.name).join(Store, Store.id == Ticket.store_id)
 
     if user.role == ROLE_CLIENT:
         q = q.join(ClientAccess, ClientAccess.store_id == Ticket.store_id).filter(ClientAccess.user_id == user.id)
@@ -144,19 +128,18 @@ def list_tickets(
 
     return [
         TicketOut(
-            id=t.id, store_id=t.store_id, status=t.status,
+            id=t.id, store_id=t.store_id, store_name=store_name, status=t.status,
             problem=t.problem, type=t.type, priority=t.priority,
             requester_name=t.requester_name, local=t.local,
             assigned_tech_id=t.assigned_tech_id,
             opened_at=t.opened_at.isoformat() if t.opened_at else None,
             updated_at=t.updated_at.isoformat() if t.updated_at else None,
-        )
-        for t in rows
+        ) for (t, store_name) in rows
     ]
 
 
-# ---------- Get detail ----------
-@router.get("/{ticket_id}", response_model=TicketDetail)
+# ---------- Get detail (✅ devolve {ticket, updates} para bater com frontend atual) ----------
+@router.get("/{ticket_id}")
 def get_ticket(ticket_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
@@ -164,10 +147,11 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db), user: User = Depen
 
     ensure_can_view_ticket(db, user, t)
 
+    store = db.query(Store).filter(Store.id == t.store_id).first()
     closure = db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first()
 
-    return TicketDetail(
-        id=t.id, store_id=t.store_id, status=t.status,
+    ticket = TicketDetail(
+        id=t.id, store_id=t.store_id, store_name=(store.name if store else None), status=t.status,
         problem=t.problem, type=t.type, priority=t.priority,
         requester_name=t.requester_name, local=t.local,
         assigned_tech_id=t.assigned_tech_id,
@@ -175,6 +159,21 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db), user: User = Depen
         updated_at=t.updated_at.isoformat() if t.updated_at else None,
         resolution_text=closure.resolution_text if closure else None,
     )
+
+    rows = db.query(TicketUpdate).filter(TicketUpdate.ticket_id == ticket_id).order_by(TicketUpdate.created_at.asc()).all()
+    updates = [
+        TicketUpdateOut(
+            id=u.id,
+            ticket_id=u.ticket_id,
+            created_by_user_id=u.created_by_user_id,
+            created_at=u.created_at.isoformat() if u.created_at else "",
+            event_type=u.event_type,
+            note=u.note,
+            payload_json=u.payload_json,
+        ) for u in rows
+    ]
+
+    return {"ticket": ticket, "updates": updates}
 
 
 # ---------- Updates (timeline) ----------
@@ -187,7 +186,6 @@ def list_updates(ticket_id: str, db: Session = Depends(get_db), user: User = Dep
     ensure_can_view_ticket(db, user, t)
 
     rows = db.query(TicketUpdate).filter(TicketUpdate.ticket_id == ticket_id).order_by(TicketUpdate.created_at.asc()).all()
-
     return [
         TicketUpdateOut(
             id=u.id,
@@ -197,8 +195,7 @@ def list_updates(ticket_id: str, db: Session = Depends(get_db), user: User = Dep
             event_type=u.event_type,
             note=u.note,
             payload_json=u.payload_json,
-        )
-        for u in rows
+        ) for u in rows
     ]
 
 
@@ -211,6 +208,9 @@ def assign_ticket(ticket_id: str, body: AssignRequest, db: Session = Depends(get
 
     if user.role == ROLE_CLIENT:
         raise HTTPException(status_code=403, detail="Cliente não pode atribuir chamado")
+
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+    store_name = store.name if store else None
 
     old_status = t.status
 
@@ -254,7 +254,7 @@ def assign_ticket(ticket_id: str, body: AssignRequest, db: Session = Depends(get
         db.commit()
 
     return TicketOut(
-        id=t.id, store_id=t.store_id, status=t.status,
+        id=t.id, store_id=t.store_id, store_name=store_name, status=t.status,
         problem=t.problem, type=t.type, priority=t.priority,
         requester_name=t.requester_name, local=t.local,
         assigned_tech_id=t.assigned_tech_id,
@@ -289,8 +289,10 @@ def start_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=body.note, payload={"from": old, "to": "EM_ATENDIMENTO"})
     db.commit()
 
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+
     return TicketOut(
-        id=t.id, store_id=t.store_id, status=t.status,
+        id=t.id, store_id=t.store_id, store_name=(store.name if store else None), status=t.status,
         problem=t.problem, type=t.type, priority=t.priority,
         requester_name=t.requester_name, local=t.local,
         assigned_tech_id=t.assigned_tech_id,
@@ -323,8 +325,10 @@ def pend_ticket(ticket_id: str, body: StatusRequest, db: Session = Depends(get_d
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=body.note, payload={"from": old, "to": "PENDENTE"})
     db.commit()
 
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+
     return TicketOut(
-        id=t.id, store_id=t.store_id, status=t.status,
+        id=t.id, store_id=t.store_id, store_name=(store.name if store else None), status=t.status,
         problem=t.problem, type=t.type, priority=t.priority,
         requester_name=t.requester_name, local=t.local,
         assigned_tech_id=t.assigned_tech_id,
@@ -385,8 +389,10 @@ def close_ticket(ticket_id: str, body: CloseRequest, db: Session = Depends(get_d
 
     db.commit()
 
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+
     return TicketOut(
-        id=t.id, store_id=t.store_id, status=t.status,
+        id=t.id, store_id=t.store_id, store_name=(store.name if store else None), status=t.status,
         problem=t.problem, type=t.type, priority=t.priority,
         requester_name=t.requester_name, local=t.local,
         assigned_tech_id=t.assigned_tech_id,
