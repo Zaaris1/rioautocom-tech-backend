@@ -1,6 +1,6 @@
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 
 # ---------- Auth ----------
 class LoginRequest(BaseModel):
@@ -81,7 +81,7 @@ class TicketCreate(BaseModel):
 class TicketOut(BaseModel):
     id: str
     store_id: str
-    store_name: Optional[str] = None  # ✅ NOVO
+    store_name: Optional[str] = None  # ✅ NOVO (pra lista mostrar nome)
     status: str
     problem: str
     type: str
@@ -95,17 +95,22 @@ class TicketOut(BaseModel):
 class TicketDetail(TicketOut):
     resolution_text: Optional[str] = None
 
+# ---------- Requests compatíveis com o FRONTEND ----------
 class AssignRequest(BaseModel):
-    tech_id: Optional[str] = None  # admin atribui outro; tech assume com null
+    # ✅ frontend manda { username } no admin (tech assume com {})
+    username: Optional[str] = None
 
 class CommentRequest(BaseModel):
-    note: str = Field(min_length=1, max_length=4000)
+    # ✅ frontend manda { message }
+    message: str = Field(min_length=1, max_length=4000)
 
 class CloseRequest(BaseModel):
-    resolution_text: str = Field(min_length=15, max_length=10000)
+    # ✅ frontend manda { parecer }
+    parecer: str = Field(min_length=15, max_length=10000)
 
 class StatusRequest(BaseModel):
-    note: Optional[str] = Field(default=None, max_length=2000)
+    # ✅ frontend manda { message } (ou vazio)
+    message: Optional[str] = Field(default=None, max_length=2000)
 
 class TicketUpdateOut(BaseModel):
     id: str
