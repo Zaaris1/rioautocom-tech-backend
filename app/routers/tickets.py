@@ -389,32 +389,61 @@ def assign_ticket(
     old_status = t.status
 
     if user.role == ROLE_ADMIN:
-        # Front manda { username } (ou vazio)
+        # ✅ Admin agora pode:
+        # - atribuir para um TECH informando username
+        # - OU assumir para si mesmo se vier sem username (mesmo comportamento do TECH)
         username = (body.username if body else None)
-        if not username:
-            raise HTTPException(status_code=400, detail="Admin precisa informar username do técnico")
 
-        tech = db.query(User).filter(
-            User.username == username,
-            User.role == ROLE_TECH,
-            User.active == True
-        ).first()
-        if not tech:
-            raise HTTPException(status_code=404, detail="Técnico não encontrado/ativo")
+        if username:
+            tech = db.query(User).filter(
+                User.username == username,
+                User.role == ROLE_TECH,
+                User.active == True
+            ).first()
+            if not tech:
+                raise HTTPException(status_code=404, detail="Técnico não encontrado/ativo")
 
-        t.assigned_tech_id = tech.id
-        if t.status == "ABERTO":
-            t.status = "ATRIBUIDO"
-        t.assigned_at = datetime.utcnow()
-        t.updated_at = datetime.utcnow()
+            t.assigned_tech_id = tech.id
+            if t.status == "ABERTO":
+                t.status = "ATRIBUIDO"
+            t.assigned_at = datetime.utcnow()
+            t.updated_at = datetime.utcnow()
 
-        db.add(t)
-        db.commit()
+            db.add(t)
+            db.commit()
 
-        add_update(db, t.id, user.id, "ASSIGN", note="Atribuído pelo admin", payload={"username": tech.username, "tech_id": tech.id})
-        if old_status != t.status:
-            add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
-        db.commit()
+            add_update(
+                db, t.id, user.id, "ASSIGN",
+                note="Atribuído pelo admin",
+                payload={"username": tech.username, "tech_id": tech.id}
+            )
+            if old_status != t.status:
+                add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
+            db.commit()
+
+        else:
+            # ✅ admin assume para si (sem username)
+            if t.assigned_tech_id and t.assigned_tech_id != user.id:
+                raise HTTPException(status_code=409, detail="Chamado já atribuído a outro técnico")
+
+            t.assigned_tech_id = user.id
+            if t.status == "ABERTO":
+                t.status = "ATRIBUIDO"
+                t.assigned_at = datetime.utcnow()
+
+            t.updated_at = datetime.utcnow()
+
+            db.add(t)
+            db.commit()
+
+            add_update(
+                db, t.id, user.id, "ASSIGN",
+                note="Assumido pelo admin",
+                payload={"username": user.username, "tech_id": user.id}
+            )
+            if old_status != t.status:
+                add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
+            db.commit()
 
     elif user.role == ROLE_TECH:
         # técnico assume (frontend pode mandar vazio)
@@ -431,7 +460,11 @@ def assign_ticket(
         db.add(t)
         db.commit()
 
-        add_update(db, t.id, user.id, "ASSIGN", note="Assumido pelo técnico", payload={"username": user.username, "tech_id": user.id})
+        add_update(
+            db, t.id, user.id, "ASSIGN",
+            note="Assumido pelo técnico",
+            payload={"username": user.username, "tech_id": user.id}
+        )
         if old_status != t.status:
             add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
         db.commit()
@@ -446,7 +479,7 @@ def assign_ticket(
     )
 
 
-# ---------- Tech workflow ----------
+# ---------- Tech/Admin workflow ----------
 @router.post("/{ticket_id}/start", response_model=TicketOut)
 def start_ticket(
     ticket_id: str,
@@ -454,8 +487,9 @@ def start_ticket(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    if user.role != ROLE_TECH:
-        raise HTTPException(status_code=403, detail="Apenas técnico")
+    # ✅ ADMIN também pode executar ações de técnico
+    if user.role not in (ROLE_TECH, ROLE_ADMIN):
+        raise HTTPException(status_code=403, detail="Apenas técnico/admin")
 
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
@@ -474,7 +508,7 @@ def start_ticket(
     db.add(t)
     db.commit()
 
-    note = (body.message if body else None)  # ✅ frontend manda "message"
+    note = (body.message if body else None)  # ✅ backend usa "message"
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "EM_ATENDIMENTO"})
     db.commit()
 
@@ -497,8 +531,9 @@ def pend_ticket(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    if user.role != ROLE_TECH:
-        raise HTTPException(status_code=403, detail="Apenas técnico")
+    # ✅ ADMIN também pode executar ações de técnico
+    if user.role not in (ROLE_TECH, ROLE_ADMIN):
+        raise HTTPException(status_code=403, detail="Apenas técnico/admin")
 
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
@@ -516,7 +551,7 @@ def pend_ticket(
     db.add(t)
     db.commit()
 
-    note = (body.message if body else None)  # ✅ frontend manda "message"
+    note = (body.message if body else None)  # ✅ backend usa "message"
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "PENDENTE"})
     db.commit()
 
@@ -546,14 +581,14 @@ def comment_ticket(
 
     ensure_can_view_ticket(db, user, t)
 
-    # ✅ frontend manda "message"
+    # ✅ backend espera "message"
     add_update(db, t.id, user.id, "COMMENT", note=body.message)
     db.commit()
 
     return {"ok": True}
 
 
-# ---------- Close (TECH only with mandatory resolution) ----------
+# ---------- Close (TECH/Admin only with mandatory resolution) ----------
 @router.post("/{ticket_id}/close", response_model=TicketOut)
 def close_ticket(
     ticket_id: str,
@@ -561,8 +596,9 @@ def close_ticket(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    if user.role != ROLE_TECH:
-        raise HTTPException(status_code=403, detail="Apenas técnico")
+    # ✅ ADMIN também pode executar ações de técnico
+    if user.role not in (ROLE_TECH, ROLE_ADMIN):
+        raise HTTPException(status_code=403, detail="Apenas técnico/admin")
 
     t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not t:
