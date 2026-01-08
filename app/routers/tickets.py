@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
@@ -21,6 +22,8 @@ from app.deps import get_current_user
 router = APIRouter()
 
 VALID_STATUSES = {"ABERTO","ATRIBUIDO","EM_ATENDIMENTO","PENDENTE","CONCLUIDO","CANCELADO"}
+VALID_PRIORITIES = {"NORMAL", "URGENTE"}
+VALID_TYPES = {"REPARO", "SUPORTE", "VISITA", "OUTRO"}  # ajuste se você tiver outros tipos
 
 
 def add_update(
@@ -59,6 +62,24 @@ def ensure_can_view_ticket(db: Session, user: User, ticket: Ticket) -> None:
 def ensure_assigned_to_user(ticket: Ticket, user: User):
     if ticket.assigned_tech_id != user.id:
         raise HTTPException(status_code=403, detail="Chamado não atribuído a você")
+
+
+class TicketEditRequest(BaseModel):
+    requester_name: Optional[str] = Field(default=None, max_length=120)
+    local: Optional[str] = Field(default=None, max_length=500)
+    problem: Optional[str] = Field(default=None, max_length=5000)
+    priority: Optional[str] = Field(default=None)
+    type: Optional[str] = Field(default=None)
+
+    class Config:
+        extra = "forbid"
+
+
+def _norm_str(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s if s else None
 
 
 # ---------- Create (ADMIN only) ----------
@@ -202,6 +223,118 @@ def get_ticket(
     ]
 
     return {"ticket": ticket, "updates": updates}
+
+
+# ---------- Edit ticket (ADMIN only) ----------
+@router.patch("/{ticket_id}", response_model=TicketOut)
+def edit_ticket(
+    ticket_id: str,
+    body: TicketEditRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    if user.role != ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Apenas admin pode editar chamado")
+
+    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+    store_name = store.name if store else None
+
+    before = {
+        "requester_name": t.requester_name,
+        "local": t.local,
+        "problem": t.problem,
+        "priority": t.priority,
+        "type": t.type,
+    }
+
+    changed = {}
+
+    # requester_name
+    if body.requester_name is not None:
+        v = _norm_str(body.requester_name)
+        if v is None:
+            raise HTTPException(status_code=400, detail="requester_name não pode ser vazio")
+        if v != t.requester_name:
+            t.requester_name = v
+            changed["requester_name"] = v
+
+    # local
+    if body.local is not None:
+        v = _norm_str(body.local)
+        if v is None:
+            raise HTTPException(status_code=400, detail="local não pode ser vazio")
+        if v != t.local:
+            t.local = v
+            changed["local"] = v
+
+    # problem
+    if body.problem is not None:
+        v = _norm_str(body.problem)
+        if v is None:
+            raise HTTPException(status_code=400, detail="problem não pode ser vazio")
+        if v != t.problem:
+            t.problem = v
+            changed["problem"] = v
+
+    # priority
+    if body.priority is not None:
+        v = _norm_str(body.priority)
+        if v is None:
+            raise HTTPException(status_code=400, detail="priority não pode ser vazio")
+        if v not in VALID_PRIORITIES:
+            raise HTTPException(status_code=400, detail="priority inválida")
+        if v != t.priority:
+            t.priority = v
+            changed["priority"] = v
+
+    # type
+    if body.type is not None:
+        v = _norm_str(body.type)
+        if v is None:
+            raise HTTPException(status_code=400, detail="type não pode ser vazio")
+        if v not in VALID_TYPES:
+            raise HTTPException(status_code=400, detail="type inválido")
+        if v != t.type:
+            t.type = v
+            changed["type"] = v
+
+    if not changed:
+        raise HTTPException(status_code=400, detail="Nenhuma alteração enviada")
+
+    t.updated_at = datetime.utcnow()
+    db.add(t)
+    db.commit()
+
+    after = {
+        "requester_name": t.requester_name,
+        "local": t.local,
+        "problem": t.problem,
+        "priority": t.priority,
+        "type": t.type,
+    }
+
+    add_update(
+        db,
+        t.id,
+        user.id,
+        "EDIT",
+        note="Chamado editado",
+        payload={"changed": changed, "before": before, "after": after}
+    )
+    db.commit()
+
+    return TicketOut(
+        id=t.id, store_id=t.store_id, store_name=store_name, status=t.status,
+        problem=t.problem, type=t.type, priority=t.priority,
+        requester_name=t.requester_name, local=t.local,
+        assigned_tech_id=t.assigned_tech_id,
+        opened_at=t.opened_at.isoformat() if t.opened_at else None,
+        updated_at=t.updated_at.isoformat() if t.updated_at else None,
+    )
 
 
 # ---------- Updates (timeline) ----------
