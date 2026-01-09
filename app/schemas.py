@@ -35,21 +35,33 @@ class UserOut(BaseModel):
     must_change_password: bool
     active: bool
 
+# ---------- Networks ----------
+class NetworkCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+class NetworkOut(BaseModel):
+    id: str
+    name: str
+    active: bool
+
 # ---------- Stores ----------
 class StoreCreate(BaseModel):
     name: str
     cnpj: str
+    network_id: Optional[str] = None  # ✅ novo (opcional)
 
 class StoreUpdate(BaseModel):
     name: Optional[str] = None
     cnpj: Optional[str] = None
     active: Optional[bool] = None
+    network_id: Optional[str] = None  # ✅ novo (opcional)
 
 class StoreOut(BaseModel):
     id: str
     name: str
     cnpj: str
     active: bool
+    network_id: Optional[str] = None  # ✅ novo
 
 # ---------- Tickets (Enums) ----------
 class TicketType(str, Enum):
@@ -97,7 +109,7 @@ class TicketDetail(TicketOut):
 
 # ---------- Requests compatíveis com o FRONTEND ----------
 class AssignRequest(BaseModel):
-    # ✅ frontend manda { username } no admin (tech assume com {})
+    # ✅ frontend manda { username } no admin (tech assume com {} / vazio)
     username: Optional[str] = None
 
 class CommentRequest(BaseModel):
