@@ -1,4 +1,3 @@
-
 from sqlalchemy import Column, String, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.sql import func
 from app.database import Base
@@ -17,6 +16,13 @@ class User(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+class Network(Base):
+    __tablename__ = "networks"
+    id = Column(String, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class Store(Base):
     __tablename__ = "stores"
     id = Column(String, primary_key=True)
@@ -24,6 +30,11 @@ class Store(Base):
     cnpj = Column(String, unique=True, nullable=False)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # ✅ rede (já existe no DB como network_id)
+    network_id = Column(String, ForeignKey("networks.id"), nullable=True)
+
+Index("ix_stores_network_id", Store.network_id)
 
 class ClientAccess(Base):
     __tablename__ = "client_access"
