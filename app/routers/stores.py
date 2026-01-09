@@ -1,4 +1,3 @@
-from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -13,22 +12,25 @@ router = APIRouter()
 def list_stores(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    network_id: Optional[str] = Query(None, description="Filtrar lojas por rede (network_id)"),
+    network_id: str | None = Query(default=None, description="Filtrar lojas por rede (network_id)")
 ):
     q = db.query(Store)
 
-    # CLIENT: só lojas que ele tem acesso
-    if user.role not in (ROLE_ADMIN, ROLE_TECH):
-        q = (
-            q.join(ClientAccess, ClientAccess.store_id == Store.id)
-             .filter(ClientAccess.user_id == user.id)
-        )
-
-    # filtro por rede (para TODOS os perfis)
+    # ✅ filtro opcional por rede
     if network_id:
         q = q.filter(Store.network_id == network_id)
 
-    rows = q.order_by(Store.active.desc(), Store.name).all()
+    # ✅ admin/tech veem todas
+    if user.role in (ROLE_ADMIN, ROLE_TECH):
+        rows = q.order_by(Store.active.desc(), Store.name).all()
+    else:
+        # ✅ client vê somente lojas vinculadas + respeita network_id se vier
+        rows = (
+            q.join(ClientAccess, ClientAccess.store_id == Store.id)
+             .filter(ClientAccess.user_id == user.id)
+             .order_by(Store.active.desc(), Store.name)
+             .all()
+        )
 
     return [
         StoreOut(
@@ -36,7 +38,7 @@ def list_stores(
             name=s.name,
             cnpj=s.cnpj,
             active=s.active,
-            network_id=s.network_id,
+            network_id=getattr(s, "network_id", None),
         )
         for s in rows
     ]
