@@ -3,8 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 from app.seed import seed_data
-from app.routers import auth, stores, tickets, admin
-from app.routers import networks  # ✅ novo
+from app.routers import auth, stores, tickets, admin, networks
 
 app = FastAPI(title="RioAutocom Tech API", version="1.0.0-final")
 
@@ -16,12 +15,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MVP: cria tabelas se não existirem (não altera schema existente)
 Base.metadata.create_all(bind=engine)
 seed_data()
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
-app.include_router(networks.router, prefix="/networks", tags=["Networks"])  # ✅ novo
+app.include_router(networks.router, prefix="/networks", tags=["Networks"])  # ✅ NOVO
 app.include_router(stores.router, prefix="/stores", tags=["Stores"])
 app.include_router(tickets.router, prefix="/tickets", tags=["Tickets"])
