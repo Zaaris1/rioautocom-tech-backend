@@ -137,6 +137,8 @@ def list_tickets(
     open_only: bool = Query(False, description="Somente ABERTO e sem técnico (fila)"),
     mine_only: bool = Query(False, description="Somente tickets do técnico logado"),
     status: Optional[str] = Query(None, description="Filtrar por status"),
+    network_id: Optional[str] = Query(None, description="Filtrar por rede (network_id)"),
+    store_id: Optional[str] = Query(None, description="Filtrar por loja (store_id)"),
     limit: int = Query(200, ge=1, le=500),
 ):
     if status and status not in VALID_STATUSES:
@@ -144,6 +146,14 @@ def list_tickets(
 
     # traz Store.name
     q = db.query(Ticket, Store.name).join(Store, Store.id == Ticket.store_id)
+
+    # ✅ filtro por loja OU por rede:
+    # - se vier store_id: filtra aquela loja
+    # - senão, se vier network_id: pega tickets de todas as lojas da rede (opção "todas as lojas")
+    if store_id:
+        q = q.filter(Ticket.store_id == store_id)
+    elif network_id:
+        q = q.filter(Store.network_id == network_id)
 
     if user.role == ROLE_CLIENT:
         q = q.join(ClientAccess, ClientAccess.store_id == Ticket.store_id).filter(
