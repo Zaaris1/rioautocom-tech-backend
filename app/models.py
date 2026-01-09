@@ -6,6 +6,7 @@ ROLE_ADMIN = "ADMIN"
 ROLE_TECH = "TECH"
 ROLE_CLIENT = "CLIENT"
 
+
 class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True)
@@ -16,12 +17,15 @@ class User(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+
+# ✅ NOVO
 class Network(Base):
     __tablename__ = "networks"
     id = Column(String, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 class Store(Base):
     __tablename__ = "stores"
@@ -31,16 +35,19 @@ class Store(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # ✅ rede (já existe no DB como network_id)
-    network_id = Column(String, ForeignKey("networks.id"), nullable=True)
+    # ✅ NOVO (no seu banco já existe)
+    network_id = Column(Text, ForeignKey("networks.id"), nullable=True)
+
 
 Index("ix_stores_network_id", Store.network_id)
+
 
 class ClientAccess(Base):
     __tablename__ = "client_access"
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
     store_id = Column(String, ForeignKey("stores.id"), primary_key=True)
     __table_args__ = (UniqueConstraint("user_id", "store_id", name="uq_client_store"),)
+
 
 class Ticket(Base):
     __tablename__ = "tickets"
@@ -66,9 +73,11 @@ class Ticket(Base):
 
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+
 Index("ix_tickets_store_id", Ticket.store_id)
 Index("ix_tickets_status", Ticket.status)
 Index("ix_tickets_assigned_tech_id", Ticket.assigned_tech_id)
+
 
 class TicketUpdate(Base):
     __tablename__ = "ticket_updates"
@@ -76,11 +85,13 @@ class TicketUpdate(Base):
     ticket_id = Column(String, ForeignKey("tickets.id"), nullable=False)
     created_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    event_type = Column(String, nullable=False)  # CREATE, COMMENT, STATUS_CHANGE, ASSIGN, UNASSIGN, EDIT, CLOSE, CANCEL
+    event_type = Column(String, nullable=False)  # CREATE, COMMENT, STATUS_CHANGE, ASSIGN, EDIT, CLOSE...
     note = Column(Text, nullable=True)
     payload_json = Column(Text, nullable=True)  # string JSON
 
+
 Index("ix_ticket_updates_ticket_id", TicketUpdate.ticket_id)
+
 
 class TicketClosure(Base):
     __tablename__ = "ticket_closures"
