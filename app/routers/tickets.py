@@ -5,12 +5,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_  # ✅ adiciona or_
 
 from app.database import get_db
 from app.models import (
     Ticket, TicketUpdate, TicketClosure,
-    Store, ClientAccess, User,
+    Store, ClientAccess, ClientNetworkAccess, User,  # ✅ inclui ClientNetworkAccess
     ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT
 )
 from app.schemas import (
@@ -45,10 +45,32 @@ def add_update(
 
 
 def ensure_store_access_for_client(db: Session, user: User, store_id: str):
-    ok = db.query(ClientAccess).filter(
-        ClientAccess.user_id == user.id,
-        ClientAccess.store_id == store_id
-    ).first()
+    """
+    ✅ Agora o CLIENT tem acesso se:
+    - vínculo direto em client_access
+    OU
+    - vínculo por rede em client_network_access (rede da loja)
+    """
+    ok = (
+        db.query(Store)
+        .outerjoin(
+            ClientAccess,
+            (ClientAccess.store_id == Store.id) & (ClientAccess.user_id == user.id),
+        )
+        .outerjoin(
+            ClientNetworkAccess,
+            (ClientNetworkAccess.network_id == Store.network_id) & (ClientNetworkAccess.user_id == user.id),
+        )
+        .filter(Store.id == store_id)
+        .filter(
+            or_(
+                ClientAccess.user_id.isnot(None),
+                ClientNetworkAccess.user_id.isnot(None),
+            )
+        )
+        .first()
+    )
+
     if not ok:
         raise HTTPException(status_code=403, detail="Sem permissão para esta loja")
 
@@ -148,16 +170,28 @@ def list_tickets(
     q = db.query(Ticket, Store.name).join(Store, Store.id == Ticket.store_id)
 
     # ✅ filtro por loja OU por rede:
-    # - se vier store_id: filtra aquela loja
-    # - senão, se vier network_id: pega tickets de todas as lojas da rede (opção "todas as lojas")
     if store_id:
         q = q.filter(Ticket.store_id == store_id)
     elif network_id:
         q = q.filter(Store.network_id == network_id)
 
+    # ✅ CLIENT: acesso direto OU por rede
     if user.role == ROLE_CLIENT:
-        q = q.join(ClientAccess, ClientAccess.store_id == Ticket.store_id).filter(
-            ClientAccess.user_id == user.id
+        q = (
+            q.outerjoin(
+                ClientAccess,
+                (ClientAccess.store_id == Ticket.store_id) & (ClientAccess.user_id == user.id),
+            )
+            .outerjoin(
+                ClientNetworkAccess,
+                (ClientNetworkAccess.network_id == Store.network_id) & (ClientNetworkAccess.user_id == user.id),
+            )
+            .filter(
+                or_(
+                    ClientAccess.user_id.isnot(None),
+                    ClientNetworkAccess.user_id.isnot(None),
+                )
+            )
         )
 
     if user.role == ROLE_TECH:
@@ -399,9 +433,6 @@ def assign_ticket(
     old_status = t.status
 
     if user.role == ROLE_ADMIN:
-        # ✅ Admin agora pode:
-        # - atribuir para um TECH informando username
-        # - OU assumir para si mesmo se vier sem username (mesmo comportamento do TECH)
         username = (body.username if body else None)
 
         if username:
@@ -432,7 +463,6 @@ def assign_ticket(
             db.commit()
 
         else:
-            # ✅ admin assume para si (sem username)
             if t.assigned_tech_id and t.assigned_tech_id != user.id:
                 raise HTTPException(status_code=409, detail="Chamado já atribuído a outro técnico")
 
@@ -456,7 +486,6 @@ def assign_ticket(
             db.commit()
 
     elif user.role == ROLE_TECH:
-        # técnico assume (frontend pode mandar vazio)
         if t.assigned_tech_id and t.assigned_tech_id != user.id:
             raise HTTPException(status_code=409, detail="Chamado já atribuído a outro técnico")
 
@@ -493,11 +522,10 @@ def assign_ticket(
 @router.post("/{ticket_id}/start", response_model=TicketOut)
 def start_ticket(
     ticket_id: str,
-    body: Optional[StatusRequest] = Body(default=None),  # ✅ permite start sem body
+    body: Optional[StatusRequest] = Body(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    # ✅ ADMIN também pode executar ações de técnico
     if user.role not in (ROLE_TECH, ROLE_ADMIN):
         raise HTTPException(status_code=403, detail="Apenas técnico/admin")
 
@@ -518,7 +546,7 @@ def start_ticket(
     db.add(t)
     db.commit()
 
-    note = (body.message if body else None)  # ✅ backend usa "message"
+    note = (body.message if body else None)
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "EM_ATENDIMENTO"})
     db.commit()
 
@@ -541,7 +569,6 @@ def pend_ticket(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    # ✅ ADMIN também pode executar ações de técnico
     if user.role not in (ROLE_TECH, ROLE_ADMIN):
         raise HTTPException(status_code=403, detail="Apenas técnico/admin")
 
@@ -561,7 +588,7 @@ def pend_ticket(
     db.add(t)
     db.commit()
 
-    note = (body.message if body else None)  # ✅ backend usa "message"
+    note = (body.message if body else None)
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "PENDENTE"})
     db.commit()
 
@@ -591,7 +618,6 @@ def comment_ticket(
 
     ensure_can_view_ticket(db, user, t)
 
-    # ✅ backend espera "message"
     add_update(db, t.id, user.id, "COMMENT", note=body.message)
     db.commit()
 
@@ -606,7 +632,6 @@ def close_ticket(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    # ✅ ADMIN também pode executar ações de técnico
     if user.role not in (ROLE_TECH, ROLE_ADMIN):
         raise HTTPException(status_code=403, detail="Apenas técnico/admin")
 
@@ -622,7 +647,7 @@ def close_ticket(
     if db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first():
         raise HTTPException(status_code=409, detail="Chamado já concluído")
 
-    parecer = body.parecer.strip()  # ✅ frontend manda "parecer"
+    parecer = body.parecer.strip()
 
     db.add(TicketClosure(
         ticket_id=t.id,
