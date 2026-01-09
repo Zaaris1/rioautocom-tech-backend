@@ -1,12 +1,13 @@
-
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.models import User, Store, ClientAccess, ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT
+from app.models import User, Store, ClientAccess, Network, ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT
 from app.schemas import (
     UserCreate, UserUpdate, UserOut,
     StoreCreate, StoreUpdate, StoreOut,
+    NetworkCreate, NetworkOut
 )
 from app.security import hash_password
 from app.deps import require_roles
@@ -16,6 +17,27 @@ router = APIRouter()
 def _assert_role(role: str):
     if role not in (ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT):
         raise HTTPException(status_code=400, detail="Role inválida")
+
+# -------- Networks (ADMIN) --------
+@router.post("/networks", response_model=NetworkOut)
+def create_network(
+    body: NetworkCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(ROLE_ADMIN)),
+):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nome inválido")
+
+    if db.query(Network).filter(Network.name == name).first():
+        raise HTTPException(status_code=409, detail="Rede já existe")
+
+    n = Network(id=str(uuid.uuid4()), name=name, active=True)
+    db.add(n)
+    db.commit()
+    db.refresh(n)
+    return NetworkOut(id=n.id, name=n.name, active=n.active)
+
 
 # -------- Users --------
 @router.post("/users", response_model=UserOut)
@@ -73,16 +95,29 @@ def update_user(user_id: str, body: UserUpdate, db: Session = Depends(get_db), _
 def create_store(body: StoreCreate, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
     if db.query(Store).filter(Store.cnpj == body.cnpj).first():
         raise HTTPException(status_code=409, detail="CNPJ já cadastrado")
-    s = Store(id=str(uuid.uuid4()), name=body.name, cnpj=body.cnpj, active=True)
+
+    # ✅ valida rede se vier
+    if body.network_id:
+        net = db.query(Network).filter(Network.id == body.network_id).first()
+        if not net:
+            raise HTTPException(status_code=404, detail="Rede não encontrada")
+
+    s = Store(
+        id=str(uuid.uuid4()),
+        name=body.name,
+        cnpj=body.cnpj,
+        active=True,
+        network_id=body.network_id
+    )
     db.add(s)
     db.commit()
     db.refresh(s)
-    return StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active)
+    return StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active, network_id=s.network_id)
 
 @router.get("/stores", response_model=list[StoreOut])
 def list_stores(db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
     rows = db.query(Store).order_by(Store.active.desc(), Store.name).all()
-    return [StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active) for s in rows]
+    return [StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active, network_id=s.network_id) for s in rows]
 
 @router.patch("/stores/{store_id}", response_model=StoreOut)
 def update_store(store_id: str, body: StoreUpdate, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
@@ -92,6 +127,15 @@ def update_store(store_id: str, body: StoreUpdate, db: Session = Depends(get_db)
     if body.cnpj is not None and body.cnpj != s.cnpj:
         if db.query(Store).filter(Store.cnpj == body.cnpj).first():
             raise HTTPException(status_code=409, detail="CNPJ já cadastrado")
+
+    if body.network_id is not None:
+        if body.network_id == "":
+            s.network_id = None
+        else:
+            net = db.query(Network).filter(Network.id == body.network_id).first()
+            if not net:
+                raise HTTPException(status_code=404, detail="Rede não encontrada")
+            s.network_id = body.network_id
 
     if body.name is not None:
         s.name = body.name
@@ -103,7 +147,7 @@ def update_store(store_id: str, body: StoreUpdate, db: Session = Depends(get_db)
     db.add(s)
     db.commit()
     db.refresh(s)
-    return StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active)
+    return StoreOut(id=s.id, name=s.name, cnpj=s.cnpj, active=s.active, network_id=s.network_id)
 
 # -------- Client ↔ Store links --------
 @router.post("/clients/{client_id}/stores/{store_id}")
