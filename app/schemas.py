@@ -2,6 +2,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 from typing import Optional
 
+
 # ---------- Auth ----------
 class LoginRequest(BaseModel):
     username: str
@@ -15,6 +16,17 @@ class LoginResponse(BaseModel):
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str = Field(min_length=4, max_length=128)
+
+
+# ---------- Networks ----------
+class NetworkCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+class NetworkOut(BaseModel):
+    id: str
+    name: str
+    active: bool
+
 
 # ---------- Admin: Users ----------
 class UserCreate(BaseModel):
@@ -35,33 +47,26 @@ class UserOut(BaseModel):
     must_change_password: bool
     active: bool
 
-# ---------- Networks ----------
-class NetworkCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
-
-class NetworkOut(BaseModel):
-    id: str
-    name: str
-    active: bool
 
 # ---------- Stores ----------
 class StoreCreate(BaseModel):
     name: str
     cnpj: str
-    network_id: Optional[str] = None  # ✅ novo (opcional)
+    network_id: Optional[str] = None  # ✅ opcional
 
 class StoreUpdate(BaseModel):
     name: Optional[str] = None
     cnpj: Optional[str] = None
     active: Optional[bool] = None
-    network_id: Optional[str] = None  # ✅ novo (opcional)
+    network_id: Optional[str] = None  # ✅ opcional
 
 class StoreOut(BaseModel):
     id: str
     name: str
     cnpj: str
     active: bool
-    network_id: Optional[str] = None  # ✅ novo
+    network_id: Optional[str] = None  # ✅ NOVO
+
 
 # ---------- Tickets (Enums) ----------
 class TicketType(str, Enum):
@@ -81,6 +86,7 @@ class TicketStatus(str, Enum):
     PENDENTE = "PENDENTE"
     CONCLUIDO = "CONCLUIDO"
 
+
 # ---------- Tickets ----------
 class TicketCreate(BaseModel):
     store_id: str
@@ -93,7 +99,7 @@ class TicketCreate(BaseModel):
 class TicketOut(BaseModel):
     id: str
     store_id: str
-    store_name: Optional[str] = None  # ✅ NOVO (pra lista mostrar nome)
+    store_name: Optional[str] = None
     status: str
     problem: str
     type: str
@@ -107,21 +113,18 @@ class TicketOut(BaseModel):
 class TicketDetail(TicketOut):
     resolution_text: Optional[str] = None
 
+
 # ---------- Requests compatíveis com o FRONTEND ----------
 class AssignRequest(BaseModel):
-    # ✅ frontend manda { username } no admin (tech assume com {} / vazio)
     username: Optional[str] = None
 
 class CommentRequest(BaseModel):
-    # ✅ frontend manda { message }
     message: str = Field(min_length=1, max_length=4000)
 
 class CloseRequest(BaseModel):
-    # ✅ frontend manda { parecer }
     parecer: str = Field(min_length=15, max_length=10000)
 
 class StatusRequest(BaseModel):
-    # ✅ frontend manda { message } (ou vazio)
     message: Optional[str] = Field(default=None, max_length=2000)
 
 class TicketUpdateOut(BaseModel):
