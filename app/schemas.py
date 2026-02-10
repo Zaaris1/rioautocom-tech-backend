@@ -8,10 +8,12 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
 class LoginResponse(BaseModel):
     access_token: str
     role: str
     must_change_password: bool
+
 
 class ChangePasswordRequest(BaseModel):
     old_password: str
@@ -21,6 +23,7 @@ class ChangePasswordRequest(BaseModel):
 # ---------- Networks ----------
 class NetworkCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
+
 
 class NetworkOut(BaseModel):
     id: str
@@ -35,10 +38,12 @@ class UserCreate(BaseModel):
     password: Optional[str] = None
     must_change_password: bool = True
 
+
 class UserUpdate(BaseModel):
     password: Optional[str] = None
     must_change_password: Optional[bool] = None
     active: Optional[bool] = None
+
 
 class UserOut(BaseModel):
     id: str
@@ -54,11 +59,13 @@ class StoreCreate(BaseModel):
     cnpj: str
     network_id: Optional[str] = None  # ✅ opcional
 
+
 class StoreUpdate(BaseModel):
     name: Optional[str] = None
     cnpj: Optional[str] = None
     active: Optional[bool] = None
     network_id: Optional[str] = None  # ✅ opcional
+
 
 class StoreOut(BaseModel):
     id: str
@@ -74,10 +81,13 @@ class TicketType(str, Enum):
     VISITA = "VISITA"
     MANUTENCAO = "MANUTENCAO"
     REPARO = "REPARO"
+    OUTRO = "OUTRO"  # ✅ para bater com VALID_TYPES do tickets.py
+
 
 class TicketPriority(str, Enum):
     NORMAL = "NORMAL"
     URGENTE = "URGENTE"
+
 
 class TicketStatus(str, Enum):
     ABERTO = "ABERTO"
@@ -85,6 +95,7 @@ class TicketStatus(str, Enum):
     EM_ATENDIMENTO = "EM_ATENDIMENTO"
     PENDENTE = "PENDENTE"
     CONCLUIDO = "CONCLUIDO"
+    CANCELADO = "CANCELADO"  # ✅ para bater com VALID_STATUSES do tickets.py
 
 
 # ---------- Tickets ----------
@@ -95,6 +106,7 @@ class TicketCreate(BaseModel):
     problem: str = Field(min_length=5)
     type: TicketType
     priority: TicketPriority
+
 
 class TicketOut(BaseModel):
     id: str
@@ -110,6 +122,7 @@ class TicketOut(BaseModel):
     opened_at: Optional[str] = None
     updated_at: Optional[str] = None
 
+
 class TicketDetail(TicketOut):
     resolution_text: Optional[str] = None
 
@@ -118,14 +131,18 @@ class TicketDetail(TicketOut):
 class AssignRequest(BaseModel):
     username: Optional[str] = None
 
+
 class CommentRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+
 
 class CloseRequest(BaseModel):
     parecer: str = Field(min_length=15, max_length=10000)
 
+
 class StatusRequest(BaseModel):
     message: Optional[str] = Field(default=None, max_length=2000)
+
 
 class TicketUpdateOut(BaseModel):
     id: str
@@ -137,6 +154,10 @@ class TicketUpdateOut(BaseModel):
     payload_json: Optional[str] = None
 
 
-# ✅ NOVO: editar parecer sem reabrir ticket
+# ---------- ✅ NOVO: editar parecer de ticket já concluído ----------
+# (usado pelo tickets.py quando você escolhe a opção 2)
 class EditClosureRequest(BaseModel):
     parecer: str = Field(min_length=15, max_length=10000)
+
+    class Config:
+        extra = "forbid"
