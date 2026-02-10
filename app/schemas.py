@@ -135,3 +135,8 @@ class TicketUpdateOut(BaseModel):
     event_type: str
     note: Optional[str] = None
     payload_json: Optional[str] = None
+
+
+# ✅ NOVO: editar parecer sem reabrir ticket
+class EditClosureRequest(BaseModel):
+    parecer: str = Field(min_length=15, max_length=10000)
