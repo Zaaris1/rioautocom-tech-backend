@@ -15,7 +15,8 @@ from app.models import (
 )
 from app.schemas import (
     TicketCreate, TicketOut, TicketDetail,
-    AssignRequest, CommentRequest, CloseRequest, StatusRequest, TicketUpdateOut
+    AssignRequest, CommentRequest, CloseRequest, StatusRequest, TicketUpdateOut,
+    EditClosureRequest,  # ✅ NOVO
 )
 from app.deps import get_current_user
 
@@ -622,6 +623,75 @@ def comment_ticket(
     db.commit()
 
     return {"ok": True}
+
+
+# ---------- ✅ EDITAR PARECER (opção 2) ----------
+@router.patch("/{ticket_id}/closure", response_model=TicketOut)
+def edit_ticket_closure(
+    ticket_id: str,
+    body: EditClosureRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # Somente TECH/Admin
+    if user.role not in (ROLE_TECH, ROLE_ADMIN):
+        raise HTTPException(status_code=403, detail="Apenas técnico/admin")
+
+    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+
+    # TECH só pode editar se for o técnico atribuído
+    if user.role == ROLE_TECH:
+        ensure_assigned_to_user(t, user)
+
+    if t.status != "CONCLUIDO":
+        raise HTTPException(status_code=409, detail="Chamado não está concluído")
+
+    closure = db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first()
+    if not closure:
+        raise HTTPException(status_code=409, detail="Parecer não encontrado para este chamado")
+
+    new_text = (body.parecer or "").strip()
+    if not new_text:
+        raise HTTPException(status_code=400, detail="Parecer é obrigatório")
+
+    old_text = closure.resolution_text or ""
+    if new_text == old_text:
+        raise HTTPException(status_code=400, detail="Parecer sem alterações")
+
+    closure.resolution_text = new_text
+    t.updated_at = datetime.utcnow()
+
+    db.add(closure)
+    db.add(t)
+
+    # registra histórico (preserva rastreabilidade)
+    add_update(
+        db,
+        t.id,
+        user.id,
+        "EDIT_CLOSURE",
+        note="Parecer corrigido",
+        payload={
+            "by": user.username,
+            "old_len": len(old_text),
+            "new_len": len(new_text),
+        },
+    )
+
+    db.commit()
+
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+
+    return TicketOut(
+        id=t.id, store_id=t.store_id, store_name=(store.name if store else None), status=t.status,
+        problem=t.problem, type=t.type, priority=t.priority,
+        requester_name=t.requester_name, local=t.local,
+        assigned_tech_id=t.assigned_tech_id,
+        opened_at=t.opened_at.isoformat() if t.opened_at else None,
+        updated_at=t.updated_at.isoformat() if t.updated_at else None,
+    )
 
 
 # ---------- Close (TECH/Admin only with mandatory resolution) ----------
