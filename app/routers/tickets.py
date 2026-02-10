@@ -5,18 +5,18 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_  # ✅ adiciona or_
+from sqlalchemy import and_, or_
 
 from app.database import get_db
 from app.models import (
     Ticket, TicketUpdate, TicketClosure,
-    Store, ClientAccess, ClientNetworkAccess, User,  # ✅ inclui ClientNetworkAccess
+    Store, ClientAccess, ClientNetworkAccess, User,
     ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT
 )
 from app.schemas import (
     TicketCreate, TicketOut, TicketDetail,
     AssignRequest, CommentRequest, CloseRequest, StatusRequest, TicketUpdateOut,
-    EditClosureRequest,  # ✅ NOVO
+    EditClosureRequest,  # ✅ NOVO (opção 2)
 )
 from app.deps import get_current_user
 
@@ -24,7 +24,9 @@ router = APIRouter()
 
 VALID_STATUSES = {"ABERTO","ATRIBUIDO","EM_ATENDIMENTO","PENDENTE","CONCLUIDO","CANCELADO"}
 VALID_PRIORITIES = {"NORMAL", "URGENTE"}
-VALID_TYPES = {"REPARO", "SUPORTE", "VISITA", "OUTRO"}  # ajuste se você tiver outros tipos
+
+# ✅ alinhado ao Enum do schemas.py e ao frontend
+VALID_TYPES = {"REPARO", "SUPORTE", "VISITA", "MANUTENCAO"}
 
 
 def add_update(
@@ -47,7 +49,7 @@ def add_update(
 
 def ensure_store_access_for_client(db: Session, user: User, store_id: str):
     """
-    ✅ Agora o CLIENT tem acesso se:
+    ✅ CLIENT tem acesso se:
     - vínculo direto em client_access
     OU
     - vínculo por rede em client_network_access (rede da loja)
@@ -119,7 +121,6 @@ def create_ticket(
     if not store:
         raise HTTPException(status_code=404, detail="Loja não encontrada/ativa")
 
-    # enums ou string
     ticket_type = body.type.value if hasattr(body.type, "value") else body.type
     ticket_priority = body.priority.value if hasattr(body.priority, "value") else body.priority
 
@@ -167,16 +168,13 @@ def list_tickets(
     if status and status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="status inválido")
 
-    # traz Store.name
     q = db.query(Ticket, Store.name).join(Store, Store.id == Ticket.store_id)
 
-    # ✅ filtro por loja OU por rede:
     if store_id:
         q = q.filter(Ticket.store_id == store_id)
     elif network_id:
         q = q.filter(Store.network_id == network_id)
 
-    # ✅ CLIENT: acesso direto OU por rede
     if user.role == ROLE_CLIENT:
         q = (
             q.outerjoin(
@@ -224,7 +222,7 @@ def list_tickets(
     ]
 
 
-# ---------- Get detail (devolve {ticket, updates} p/ bater com frontend) ----------
+# ---------- Get detail (devolve {ticket, updates}) ----------
 @router.get("/{ticket_id}")
 def get_ticket(
     ticket_id: str,
@@ -298,7 +296,6 @@ def edit_ticket(
 
     changed = {}
 
-    # requester_name
     if body.requester_name is not None:
         v = _norm_str(body.requester_name)
         if v is None:
@@ -307,7 +304,6 @@ def edit_ticket(
             t.requester_name = v
             changed["requester_name"] = v
 
-    # local
     if body.local is not None:
         v = _norm_str(body.local)
         if v is None:
@@ -316,7 +312,6 @@ def edit_ticket(
             t.local = v
             changed["local"] = v
 
-    # problem
     if body.problem is not None:
         v = _norm_str(body.problem)
         if v is None:
@@ -325,7 +320,6 @@ def edit_ticket(
             t.problem = v
             changed["problem"] = v
 
-    # priority
     if body.priority is not None:
         v = _norm_str(body.priority)
         if v is None:
@@ -336,7 +330,6 @@ def edit_ticket(
             t.priority = v
             changed["priority"] = v
 
-    # type
     if body.type is not None:
         v = _norm_str(body.type)
         if v is None:
@@ -352,7 +345,6 @@ def edit_ticket(
 
     t.updated_at = datetime.utcnow()
     db.add(t)
-    db.commit()
 
     after = {
         "requester_name": t.requester_name,
@@ -382,7 +374,7 @@ def edit_ticket(
     )
 
 
-# ---------- Updates (timeline) ----------
+# ---------- Updates ----------
 @router.get("/{ticket_id}/updates", response_model=list[TicketUpdateOut])
 def list_updates(
     ticket_id: str,
@@ -452,7 +444,6 @@ def assign_ticket(
             t.updated_at = datetime.utcnow()
 
             db.add(t)
-            db.commit()
 
             add_update(
                 db, t.id, user.id, "ASSIGN",
@@ -461,6 +452,7 @@ def assign_ticket(
             )
             if old_status != t.status:
                 add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
+
             db.commit()
 
         else:
@@ -473,9 +465,7 @@ def assign_ticket(
                 t.assigned_at = datetime.utcnow()
 
             t.updated_at = datetime.utcnow()
-
             db.add(t)
-            db.commit()
 
             add_update(
                 db, t.id, user.id, "ASSIGN",
@@ -484,6 +474,7 @@ def assign_ticket(
             )
             if old_status != t.status:
                 add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
+
             db.commit()
 
     elif user.role == ROLE_TECH:
@@ -496,9 +487,7 @@ def assign_ticket(
             t.assigned_at = datetime.utcnow()
 
         t.updated_at = datetime.utcnow()
-
         db.add(t)
-        db.commit()
 
         add_update(
             db, t.id, user.id, "ASSIGN",
@@ -507,6 +496,7 @@ def assign_ticket(
         )
         if old_status != t.status:
             add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old_status, "to": t.status})
+
         db.commit()
 
     return TicketOut(
@@ -519,7 +509,7 @@ def assign_ticket(
     )
 
 
-# ---------- Tech/Admin workflow ----------
+# ---------- Start ----------
 @router.post("/{ticket_id}/start", response_model=TicketOut)
 def start_ticket(
     ticket_id: str,
@@ -545,7 +535,6 @@ def start_ticket(
     t.updated_at = datetime.utcnow()
 
     db.add(t)
-    db.commit()
 
     note = (body.message if body else None)
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "EM_ATENDIMENTO"})
@@ -563,6 +552,7 @@ def start_ticket(
     )
 
 
+# ---------- Pend ----------
 @router.post("/{ticket_id}/pend", response_model=TicketOut)
 def pend_ticket(
     ticket_id: str,
@@ -587,7 +577,6 @@ def pend_ticket(
     t.updated_at = datetime.utcnow()
 
     db.add(t)
-    db.commit()
 
     note = (body.message if body else None)
     add_update(db, t.id, user.id, "STATUS_CHANGE", note=note, payload={"from": old, "to": "PENDENTE"})
@@ -605,7 +594,7 @@ def pend_ticket(
     )
 
 
-# ---------- Comment (authorized viewers) ----------
+# ---------- Comment ----------
 @router.post("/{ticket_id}/comment")
 def comment_ticket(
     ticket_id: str,
@@ -625,76 +614,7 @@ def comment_ticket(
     return {"ok": True}
 
 
-# ---------- ✅ EDITAR PARECER (opção 2) ----------
-@router.patch("/{ticket_id}/closure", response_model=TicketOut)
-def edit_ticket_closure(
-    ticket_id: str,
-    body: EditClosureRequest,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    # Somente TECH/Admin
-    if user.role not in (ROLE_TECH, ROLE_ADMIN):
-        raise HTTPException(status_code=403, detail="Apenas técnico/admin")
-
-    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Chamado não encontrado")
-
-    # TECH só pode editar se for o técnico atribuído
-    if user.role == ROLE_TECH:
-        ensure_assigned_to_user(t, user)
-
-    if t.status != "CONCLUIDO":
-        raise HTTPException(status_code=409, detail="Chamado não está concluído")
-
-    closure = db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first()
-    if not closure:
-        raise HTTPException(status_code=409, detail="Parecer não encontrado para este chamado")
-
-    new_text = (body.parecer or "").strip()
-    if not new_text:
-        raise HTTPException(status_code=400, detail="Parecer é obrigatório")
-
-    old_text = closure.resolution_text or ""
-    if new_text == old_text:
-        raise HTTPException(status_code=400, detail="Parecer sem alterações")
-
-    closure.resolution_text = new_text
-    t.updated_at = datetime.utcnow()
-
-    db.add(closure)
-    db.add(t)
-
-    # registra histórico (preserva rastreabilidade)
-    add_update(
-        db,
-        t.id,
-        user.id,
-        "EDIT_CLOSURE",
-        note="Parecer corrigido",
-        payload={
-            "by": user.username,
-            "old_len": len(old_text),
-            "new_len": len(new_text),
-        },
-    )
-
-    db.commit()
-
-    store = db.query(Store).filter(Store.id == t.store_id).first()
-
-    return TicketOut(
-        id=t.id, store_id=t.store_id, store_name=(store.name if store else None), status=t.status,
-        problem=t.problem, type=t.type, priority=t.priority,
-        requester_name=t.requester_name, local=t.local,
-        assigned_tech_id=t.assigned_tech_id,
-        opened_at=t.opened_at.isoformat() if t.opened_at else None,
-        updated_at=t.updated_at.isoformat() if t.updated_at else None,
-    )
-
-
-# ---------- Close (TECH/Admin only with mandatory resolution) ----------
+# ---------- Close ----------
 @router.post("/{ticket_id}/close", response_model=TicketOut)
 def close_ticket(
     ticket_id: str,
@@ -736,6 +656,76 @@ def close_ticket(
     if old != "CONCLUIDO":
         add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old, "to": "CONCLUIDO"})
 
+    db.commit()
+
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+
+    return TicketOut(
+        id=t.id, store_id=t.store_id, store_name=(store.name if store else None), status=t.status,
+        problem=t.problem, type=t.type, priority=t.priority,
+        requester_name=t.requester_name, local=t.local,
+        assigned_tech_id=t.assigned_tech_id,
+        opened_at=t.opened_at.isoformat() if t.opened_at else None,
+        updated_at=t.updated_at.isoformat() if t.updated_at else None,
+    )
+
+
+# ---------- ✅ Opção 2: corrigir/editar parecer (TECH do chamado ou ADMIN) ----------
+@router.patch("/{ticket_id}/closure", response_model=TicketOut)
+def edit_ticket_closure(
+    ticket_id: str,
+    body: EditClosureRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role not in (ROLE_TECH, ROLE_ADMIN):
+        raise HTTPException(status_code=403, detail="Apenas técnico/admin")
+
+    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+
+    # precisa estar concluído
+    if t.status != "CONCLUIDO":
+        raise HTTPException(status_code=409, detail="Somente tickets CONCLUÍDOS podem ter parecer corrigido")
+
+    closure = db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first()
+    if not closure:
+        raise HTTPException(status_code=409, detail="Ticket não possui parecer registrado")
+
+    # TECH só pode corrigir se for o técnico atribuído
+    if user.role == ROLE_TECH:
+        ensure_assigned_to_user(t, user)
+
+    new_text = body.parecer.strip()
+    old_text = (closure.resolution_text or "").strip()
+
+    if not new_text:
+        raise HTTPException(status_code=400, detail="Parecer não pode ser vazio")
+
+    if new_text == old_text:
+        raise HTTPException(status_code=400, detail="Parecer igual ao atual (sem alterações)")
+
+    # atualiza
+    closure.resolution_text = new_text
+    t.updated_at = datetime.utcnow()
+
+    # registra no histórico (reaproveita EDIT para não quebrar o frontend)
+    add_update(
+        db,
+        t.id,
+        user.id,
+        "EDIT",
+        note="Parecer corrigido",
+        payload={
+            "closure_edit": True,
+            "before_len": len(old_text),
+            "after_len": len(new_text),
+        },
+    )
+
+    db.add(closure)
+    db.add(t)
     db.commit()
 
     store = db.query(Store).filter(Store.id == t.store_id).first()
