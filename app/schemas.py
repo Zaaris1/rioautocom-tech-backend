@@ -1,180 +1,192 @@
-from sqlalchemy import (
-    Column,
-    String,
-    Boolean,
-    Text,
-    DateTime,
-    ForeignKey,
-    UniqueConstraint,
-    Index,
-)
-from sqlalchemy.sql import func
-from app.database import Base
-
-ROLE_ADMIN = "ADMIN"
-ROLE_TECH = "TECH"
-ROLE_CLIENT = "CLIENT"
+from enum import Enum
+from pydantic import BaseModel, Field
+from typing import Optional
 
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(String, primary_key=True)
-    username = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    role = Column(String, nullable=False)
-    must_change_password = Column(Boolean, default=True)
-    active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+# ---------- Auth ----------
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
-# =========================
-# Redes
-# =========================
-class Network(Base):
-    __tablename__ = "networks"
-    id = Column(String, primary_key=True)
-    name = Column(String, unique=True, nullable=False)
-    active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+class LoginResponse(BaseModel):
+    access_token: str
+    role: str
+    must_change_password: bool
 
 
-# =========================
-# Lojas
-# =========================
-class Store(Base):
-    __tablename__ = "stores"
-    id = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    cnpj = Column(String, unique=True, nullable=False)
-    active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # vínculo opcional com rede
-    network_id = Column(Text, ForeignKey("networks.id"), nullable=True)
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=4, max_length=128)
 
 
-Index("ix_stores_network_id", Store.network_id)
+# ---------- Networks ----------
+class NetworkCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
 
 
-# =========================
-# Cliente → Loja (já existente)
-# =========================
-class ClientAccess(Base):
-    __tablename__ = "client_access"
-    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
-    store_id = Column(String, ForeignKey("stores.id"), primary_key=True)
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "store_id", name="uq_client_store"),
-    )
+class NetworkOut(BaseModel):
+    id: str
+    name: str
+    active: bool
 
 
-# =========================
-# ✅ NOVO: Cliente → Rede
-# =========================
-class ClientNetworkAccess(Base):
-    __tablename__ = "client_network_access"
-
-    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
-    network_id = Column(String, ForeignKey("networks.id"), primary_key=True)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "user_id",
-            "network_id",
-            name="uq_client_network"
-        ),
-    )
+# ---------- Admin: Users ----------
+class UserCreate(BaseModel):
+    username: str
+    role: str  # ADMIN, TECH, CLIENT
+    password: Optional[str] = None
+    must_change_password: bool = True
 
 
-Index("ix_client_network_user_id", ClientNetworkAccess.user_id)
-Index("ix_client_network_network_id", ClientNetworkAccess.network_id)
+class UserUpdate(BaseModel):
+    password: Optional[str] = None
+    must_change_password: Optional[bool] = None
+    active: Optional[bool] = None
 
 
-# =========================
-# AnyDesk / Acessos remotos
-# =========================
-class AnyDeskAccess(Base):
-    __tablename__ = "anydesk_accesses"
-
-    id = Column(String, primary_key=True)
-    store_id = Column(String, ForeignKey("stores.id"), nullable=False)
-    label = Column(String, nullable=False, default="Acesso principal")
-    anydesk_id = Column(String, nullable=False)
-    notes = Column(Text, nullable=True)
-    active = Column(Boolean, default=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
+class UserOut(BaseModel):
+    id: str
+    username: str
+    role: str
+    must_change_password: bool
+    active: bool
 
 
-Index("ix_anydesk_accesses_store_id", AnyDeskAccess.store_id)
-Index("ix_anydesk_accesses_active", AnyDeskAccess.active)
+# ---------- Stores ----------
+class StoreCreate(BaseModel):
+    name: str
+    cnpj: str
+    network_id: Optional[str] = None  # ✅ opcional
 
 
-# =========================
-# Tickets
-# =========================
-class Ticket(Base):
-    __tablename__ = "tickets"
-    id = Column(String, primary_key=True)
-    store_id = Column(String, ForeignKey("stores.id"), nullable=False)
-
-    opened_at = Column(DateTime(timezone=True), server_default=func.now())
-    opened_by_admin_id = Column(String, ForeignKey("users.id"), nullable=False)
-
-    requester_name = Column(String, nullable=True)
-    local = Column(String, nullable=True)
-    problem = Column(Text, nullable=False)
-
-    type = Column(String, nullable=False)
-    priority = Column(String, nullable=False)
-
-    status = Column(String, nullable=False, default="ABERTO")
-    assigned_tech_id = Column(String, ForeignKey("users.id"), nullable=True)
-
-    assigned_at = Column(DateTime(timezone=True), nullable=True)
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    closed_at = Column(DateTime(timezone=True), nullable=True)
-
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
+class StoreUpdate(BaseModel):
+    name: Optional[str] = None
+    cnpj: Optional[str] = None
+    active: Optional[bool] = None
+    network_id: Optional[str] = None  # ✅ opcional
 
 
-Index("ix_tickets_store_id", Ticket.store_id)
-Index("ix_tickets_status", Ticket.status)
-Index("ix_tickets_assigned_tech_id", Ticket.assigned_tech_id)
+class StoreOut(BaseModel):
+    id: str
+    name: str
+    cnpj: str
+    active: bool
+    network_id: Optional[str] = None  # ✅ NOVO
 
 
-# =========================
-# Histórico de Tickets
-# =========================
-class TicketUpdate(Base):
-    __tablename__ = "ticket_updates"
-    id = Column(String, primary_key=True)
-    ticket_id = Column(String, ForeignKey("tickets.id"), nullable=False)
-    created_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    event_type = Column(String, nullable=False)
-    note = Column(Text, nullable=True)
-    payload_json = Column(Text, nullable=True)
+# ---------- Tickets (Enums) ----------
+class TicketType(str, Enum):
+    SUPORTE = "SUPORTE"
+    VISITA = "VISITA"
+    MANUTENCAO = "MANUTENCAO"
+    REPARO = "REPARO"
+    OUTRO = "OUTRO"  # ✅ para bater com VALID_TYPES do tickets.py
 
 
-Index("ix_ticket_updates_ticket_id", TicketUpdate.ticket_id)
+class TicketPriority(str, Enum):
+    NORMAL = "NORMAL"
+    URGENTE = "URGENTE"
 
 
-# =========================
-# Encerramento de Ticket
-# =========================
-class TicketClosure(Base):
-    __tablename__ = "ticket_closures"
-    ticket_id = Column(String, ForeignKey("tickets.id"), primary_key=True)
-    resolution_text = Column(Text, nullable=False)
-    closed_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    closed_at = Column(DateTime(timezone=True), server_default=func.now())
+class TicketStatus(str, Enum):
+    ABERTO = "ABERTO"
+    ATRIBUIDO = "ATRIBUIDO"
+    EM_ATENDIMENTO = "EM_ATENDIMENTO"
+    PENDENTE = "PENDENTE"
+    CONCLUIDO = "CONCLUIDO"
+    CANCELADO = "CANCELADO"  # ✅ para bater com VALID_STATUSES do tickets.py
+
+
+# ---------- Tickets ----------
+class TicketCreate(BaseModel):
+    store_id: str
+    requester_name: Optional[str] = None
+    local: Optional[str] = None
+    problem: str = Field(min_length=5)
+    type: TicketType
+    priority: TicketPriority
+
+
+class TicketOut(BaseModel):
+    id: str
+    store_id: str
+    store_name: Optional[str] = None
+    status: str
+    problem: str
+    type: str
+    priority: str
+    requester_name: Optional[str] = None
+    local: Optional[str] = None
+    assigned_tech_id: Optional[str] = None
+    opened_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class TicketDetail(TicketOut):
+    resolution_text: Optional[str] = None
+
+
+# ---------- Requests compatíveis com o FRONTEND ----------
+class AssignRequest(BaseModel):
+    username: Optional[str] = None
+
+
+class CommentRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class CloseRequest(BaseModel):
+    parecer: str = Field(min_length=15, max_length=10000)
+
+
+class StatusRequest(BaseModel):
+    message: Optional[str] = Field(default=None, max_length=2000)
+
+
+class TicketUpdateOut(BaseModel):
+    id: str
+    ticket_id: str
+    created_by_user_id: str
+    created_at: str
+    event_type: str
+    note: Optional[str] = None
+    payload_json: Optional[str] = None
+
+
+# ---------- ✅ NOVO: editar parecer de ticket já concluído ----------
+# (usado pelo tickets.py quando você escolhe a opção 2)
+class EditClosureRequest(BaseModel):
+    parecer: str = Field(min_length=15, max_length=10000)
+
+    class Config:
+        extra = "forbid"
+
+
+# ---------- Acessos / AnyDesk ----------
+class AnyDeskAccessCreate(BaseModel):
+    store_id: str
+    label: str = Field(min_length=2, max_length=120)
+    anydesk_id: str = Field(min_length=6, max_length=30)
+    notes: Optional[str] = Field(default=None, max_length=500)
+    active: bool = True
+
+
+class AnyDeskAccessUpdate(BaseModel):
+    store_id: Optional[str] = None
+    label: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    anydesk_id: Optional[str] = Field(default=None, min_length=6, max_length=30)
+    notes: Optional[str] = Field(default=None, max_length=500)
+    active: Optional[bool] = None
+
+
+class AnyDeskAccessOut(BaseModel):
+    id: str
+    store_id: str
+    store_name: Optional[str] = None
+    label: str
+    anydesk_id: str
+    notes: Optional[str] = None
+    active: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
