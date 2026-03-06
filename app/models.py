@@ -92,6 +92,30 @@ Index("ix_client_network_network_id", ClientNetworkAccess.network_id)
 
 
 # =========================
+# AnyDesk / Acessos remotos
+# =========================
+class AnyDeskAccess(Base):
+    __tablename__ = "anydesk_accesses"
+
+    id = Column(String, primary_key=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False)
+    label = Column(String, nullable=False, default="Acesso principal")
+    anydesk_id = Column(String, nullable=False)
+    notes = Column(Text, nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+Index("ix_anydesk_accesses_store_id", AnyDeskAccess.store_id)
+Index("ix_anydesk_accesses_active", AnyDeskAccess.active)
+
+
+# =========================
 # Tickets
 # =========================
 class Ticket(Base):
