@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     Index,
+    Integer,
 )
 from sqlalchemy.sql import func
 from app.database import Base
@@ -178,3 +179,34 @@ class TicketClosure(Base):
     resolution_text = Column(Text, nullable=False)
     closed_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
     closed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# =========================
+# Monitoramento de conectividade (snapshot atual por loja)
+# =========================
+class StoreMonitoringStatus(Base):
+    __tablename__ = "store_monitoring_status"
+
+    store_id = Column(String, ForeignKey("stores.id"), primary_key=True)
+    store_name_reported = Column(String, nullable=True)
+    reported_status = Column(String, nullable=True)
+    up_count = Column(Integer, nullable=False, default=0)
+    down_count = Column(Integer, nullable=False, default=0)
+    total_count = Column(Integer, nullable=False, default=0)
+    summary_text = Column(Text, nullable=True)
+    details_json = Column(Text, nullable=True)
+    signature = Column(Text, nullable=True)
+    methods = Column(String, nullable=True)
+    agent_version = Column(String, nullable=True)
+    last_check_at = Column(DateTime(timezone=True), nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+Index("ix_store_monitoring_reported_status", StoreMonitoringStatus.reported_status)
+Index("ix_store_monitoring_last_seen_at", StoreMonitoringStatus.last_seen_at)
