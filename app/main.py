@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 from app.seed import seed_data
-from app.routers import auth, stores, tickets, admin, networks, accesses
+from app.routers import auth, stores, tickets, admin, networks, accesses, monitoring
 
 app = FastAPI(title="RioAutocom Tech API", version="1.0.0-final")
 
@@ -25,3 +25,5 @@ app.include_router(stores.router, prefix="/stores", tags=["Stores"])
 app.include_router(tickets.router, prefix="/tickets", tags=["Tickets"])
 
 app.include_router(accesses.router, prefix="/accesses", tags=["Acessos"])
+
+app.include_router(monitoring.router, prefix="/monitoring", tags=["Monitoring"])
