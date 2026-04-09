@@ -190,3 +190,67 @@ class AnyDeskAccessOut(BaseModel):
     active: bool
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+# ---------- Monitoramento ----------
+class MonitoringHeartbeatItem(BaseModel):
+    name: str
+    ip: str
+    ok: bool
+    detail: Optional[str] = None
+
+
+class MonitoringHeartbeatIn(BaseModel):
+    store_id: Optional[str] = None
+    store_cnpj: Optional[str] = None
+    store_name: Optional[str] = None
+    checked_at: Optional[str] = None
+    up_count: Optional[int] = None
+    down_count: Optional[int] = None
+    total_count: Optional[int] = None
+    overall_status: Optional[str] = None
+    signature: Optional[str] = None
+    summary: Optional[str] = None
+    agent_version: Optional[str] = None
+    methods: Optional[str] = None
+    items: list[MonitoringHeartbeatItem] = Field(default_factory=list)
+
+
+class MonitoringItemOut(BaseModel):
+    name: str
+    ip: str
+    ok: bool
+    detail: Optional[str] = None
+
+
+class MonitoringStoreOut(BaseModel):
+    store_id: str
+    store_name: str
+    cnpj: str
+    network_id: Optional[str] = None
+    network_name: Optional[str] = None
+    status: str
+    reported_status: Optional[str] = None
+    up_count: int = 0
+    down_count: int = 0
+    total_count: int = 0
+    summary: Optional[str] = None
+    signature: Optional[str] = None
+    methods: Optional[str] = None
+    agent_version: Optional[str] = None
+    last_check_at: Optional[str] = None
+    last_seen_at: Optional[str] = None
+    age_seconds: Optional[int] = None
+    items: list[MonitoringItemOut] = Field(default_factory=list)
+
+
+class MonitoringOverviewResponse(BaseModel):
+    items: list[MonitoringStoreOut]
+
+
+class MonitoringHeartbeatResponse(BaseModel):
+    ok: bool
+    store_id: str
+    store_name: str
+    status: str
+    checked_at: Optional[str] = None
