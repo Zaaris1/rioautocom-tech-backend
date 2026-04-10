@@ -241,6 +241,8 @@ class MonitoringStoreOut(BaseModel):
     last_check_at: Optional[str] = None
     last_seen_at: Optional[str] = None
     age_seconds: Optional[int] = None
+    active: bool = True
+    configured: bool = False
     items: list[MonitoringItemOut] = Field(default_factory=list)
 
 
