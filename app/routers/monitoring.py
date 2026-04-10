@@ -109,7 +109,7 @@ def _effective_status(row: StoreMonitoringStatus | None) -> str:
 
 
 def _visible_store_query(db: Session, user: User):
-    q = db.query(Store, Network.name.label("network_name")).outerjoin(Network, Network.id == Store.network_id)
+    q = db.query(Store, Network.name.label("network_name")).outerjoin(Network, Network.id == Store.network_id).filter(Store.active.is_(True))
 
     if user.role in (ROLE_ADMIN, ROLE_TECH):
         return q
@@ -154,6 +154,8 @@ def _row_to_out(store: Store, network_name: str | None, row: StoreMonitoringStat
         last_check_at=last_check_at,
         last_seen_at=last_seen_at,
         age_seconds=_age_seconds(row.last_seen_at if row else None),
+        active=bool(store.active),
+        configured=bool(row),
         items=items,
     )
 
