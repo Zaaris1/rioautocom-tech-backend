@@ -57,14 +57,14 @@ class UserOut(BaseModel):
 class StoreCreate(BaseModel):
     name: str
     cnpj: str
-    network_id: Optional[str] = None  # ✅ opcional
+    network_id: Optional[str] = None
 
 
 class StoreUpdate(BaseModel):
     name: Optional[str] = None
     cnpj: Optional[str] = None
     active: Optional[bool] = None
-    network_id: Optional[str] = None  # ✅ opcional
+    network_id: Optional[str] = None
 
 
 class StoreOut(BaseModel):
@@ -72,7 +72,7 @@ class StoreOut(BaseModel):
     name: str
     cnpj: str
     active: bool
-    network_id: Optional[str] = None  # ✅ NOVO
+    network_id: Optional[str] = None
 
 
 # ---------- Tickets (Enums) ----------
@@ -81,7 +81,7 @@ class TicketType(str, Enum):
     VISITA = "VISITA"
     MANUTENCAO = "MANUTENCAO"
     REPARO = "REPARO"
-    OUTRO = "OUTRO"  # ✅ para bater com VALID_TYPES do tickets.py
+    OUTRO = "OUTRO"
 
 
 class TicketPriority(str, Enum):
@@ -95,7 +95,7 @@ class TicketStatus(str, Enum):
     EM_ATENDIMENTO = "EM_ATENDIMENTO"
     PENDENTE = "PENDENTE"
     CONCLUIDO = "CONCLUIDO"
-    CANCELADO = "CANCELADO"  # ✅ para bater com VALID_STATUSES do tickets.py
+    CANCELADO = "CANCELADO"
 
 
 # ---------- Tickets ----------
@@ -127,7 +127,6 @@ class TicketDetail(TicketOut):
     resolution_text: Optional[str] = None
 
 
-# ---------- Requests compatíveis com o FRONTEND ----------
 class AssignRequest(BaseModel):
     username: Optional[str] = None
 
@@ -154,8 +153,6 @@ class TicketUpdateOut(BaseModel):
     payload_json: Optional[str] = None
 
 
-# ---------- ✅ NOVO: editar parecer de ticket já concluído ----------
-# (usado pelo tickets.py quando você escolhe a opção 2)
 class EditClosureRequest(BaseModel):
     parecer: str = Field(min_length=15, max_length=10000)
 
@@ -216,11 +213,58 @@ class MonitoringHeartbeatIn(BaseModel):
     items: list[MonitoringHeartbeatItem] = Field(default_factory=list)
 
 
+class MonitoringBackupHeartbeatIn(BaseModel):
+    store_id: Optional[str] = None
+    store_cnpj: Optional[str] = None
+    store_name: Optional[str] = None
+    checked_at: Optional[str] = None
+    status: Optional[str] = None
+    summary: Optional[str] = None
+    message: Optional[str] = None
+    task_name: Optional[str] = None
+    source_name: Optional[str] = None
+    last_event_at: Optional[str] = None
+    agent_version: Optional[str] = None
+
+
+class MonitoringCertificateItemIn(BaseModel):
+    cn: str
+    thumbprint: Optional[str] = None
+    issuer: Optional[str] = None
+    store: Optional[str] = None
+    expires_at: Optional[str] = None
+    days_left: Optional[int] = None
+    status: Optional[str] = None
+
+
+class MonitoringCertificateHeartbeatIn(BaseModel):
+    store_id: Optional[str] = None
+    store_cnpj: Optional[str] = None
+    store_name: Optional[str] = None
+    checked_at: Optional[str] = None
+    status: Optional[str] = None
+    summary: Optional[str] = None
+    message: Optional[str] = None
+    alert_days: Optional[int] = None
+    agent_version: Optional[str] = None
+    items: list[MonitoringCertificateItemIn] = Field(default_factory=list)
+
+
 class MonitoringItemOut(BaseModel):
     name: str
     ip: str
     ok: bool
     detail: Optional[str] = None
+
+
+class MonitoringCertificateItemOut(BaseModel):
+    cn: str
+    thumbprint: Optional[str] = None
+    issuer: Optional[str] = None
+    store: Optional[str] = None
+    expires_at: Optional[str] = None
+    days_left: Optional[int] = None
+    status: Optional[str] = None
 
 
 class MonitoringStoreOut(BaseModel):
@@ -244,6 +288,25 @@ class MonitoringStoreOut(BaseModel):
     active: bool = True
     configured: bool = False
     items: list[MonitoringItemOut] = Field(default_factory=list)
+
+    backup_status: Optional[str] = None
+    backup_summary: Optional[str] = None
+    backup_message: Optional[str] = None
+    backup_task_name: Optional[str] = None
+    backup_source_name: Optional[str] = None
+    backup_last_event_at: Optional[str] = None
+    backup_last_seen_at: Optional[str] = None
+    backup_agent_version: Optional[str] = None
+
+    certificate_status: Optional[str] = None
+    certificate_summary: Optional[str] = None
+    certificate_message: Optional[str] = None
+    certificate_alert_days: Optional[int] = None
+    certificate_expires_at: Optional[str] = None
+    certificate_days_left: Optional[int] = None
+    certificate_last_seen_at: Optional[str] = None
+    certificate_agent_version: Optional[str] = None
+    certificate_items: list[MonitoringCertificateItemOut] = Field(default_factory=list)
 
 
 class MonitoringOverviewResponse(BaseModel):
