@@ -10,7 +10,7 @@ from sqlalchemy import and_, or_
 from app.database import get_db
 from app.models import (
     Ticket, TicketUpdate, TicketClosure, TicketAttachment,
-    Store, ClientAccess, ClientNetworkAccess, User,
+    Store, Network, ClientAccess, ClientNetworkAccess, User,
     ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT
 )
 from app.schemas import (
@@ -52,6 +52,37 @@ def max_video_bytes() -> int:
 
 def max_attachments_per_phase() -> int:
     return _env_int("MAX_ATTACHMENTS_PER_PHASE", 5)
+
+
+def _clean_drive_folder_part(value: Optional[str], fallback: str) -> str:
+    raw = str(value or "").strip() or fallback
+    import re
+    raw = re.sub(r"[\\/:*?\"<>|]+", "-", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw[:80] or fallback
+
+
+def ticket_drive_folder_name(db: Session, ticket: Ticket) -> str:
+    store = db.query(Store).filter(Store.id == ticket.store_id).first()
+
+    store_name = _clean_drive_folder_part(store.name if store else None, "Loja")
+    network_name = None
+    if store and store.network_id:
+        network = db.query(Network).filter(Network.id == store.network_id).first()
+        if network:
+            network_name = _clean_drive_folder_part(network.name, "Rede")
+
+    opened = ticket.opened_at or datetime.utcnow()
+    date_part = opened.strftime("%d-%m-%Y")
+
+    # O backend usa UUID internamente. Usamos apenas um identificador curto no final
+    # para evitar misturar anexos caso a mesma loja tenha mais de um chamado no mesmo dia.
+    short_id = str(ticket.id or "")[:8].upper() or "SEM-ID"
+
+    if network_name:
+        return f"{network_name} - {store_name} - {date_part} - Chamado {short_id}"
+
+    return f"{store_name} - {date_part} - Chamado {short_id}"
 
 
 def normalize_phase(value: str) -> str:
@@ -140,6 +171,7 @@ def save_ticket_attachments(
         mime = (file.content_type or "application/octet-stream").lower()
         drive = upload_ticket_file(
             ticket_id=ticket.id,
+            ticket_folder_name=ticket_drive_folder_name(db, ticket),
             phase=phase,
             filename=file.filename or "arquivo",
             mime_type=mime,
