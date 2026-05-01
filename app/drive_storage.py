@@ -6,11 +6,16 @@ from functools import lru_cache
 from typing import Dict, Optional
 
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def _auth_mode() -> str:
+    return os.getenv("GOOGLE_DRIVE_AUTH_MODE", "service_account").strip().lower() or "service_account"
 
 
 def _service_account_info() -> Dict:
@@ -29,10 +34,42 @@ def _service_account_info() -> Dict:
         return json.load(f)
 
 
+def _oauth_credentials() -> Credentials:
+    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+    refresh_token = os.getenv("GOOGLE_OAUTH_REFRESH_TOKEN", "").strip()
+
+    missing = []
+    if not client_id:
+        missing.append("GOOGLE_OAUTH_CLIENT_ID")
+    if not client_secret:
+        missing.append("GOOGLE_OAUTH_CLIENT_SECRET")
+    if not refresh_token:
+        missing.append("GOOGLE_OAUTH_REFRESH_TOKEN")
+
+    if missing:
+        raise RuntimeError("Configuração OAuth do Google Drive incompleta: " + ", ".join(missing))
+
+    return Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=SCOPES,
+    )
+
+
 @lru_cache(maxsize=1)
 def get_drive_service():
-    info = _service_account_info()
-    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    mode = _auth_mode()
+
+    if mode == "oauth":
+        creds = _oauth_credentials()
+    else:
+        info = _service_account_info()
+        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
