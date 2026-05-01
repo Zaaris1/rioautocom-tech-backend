@@ -181,6 +181,26 @@ class TicketClosure(Base):
     closed_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class TicketAttachment(Base):
+    __tablename__ = "ticket_attachments"
+
+    id = Column(String, primary_key=True)
+    ticket_id = Column(String, ForeignKey("tickets.id"), nullable=False)
+    phase = Column(String, nullable=False)  # ABERTURA | FECHAMENTO
+    original_filename = Column(String, nullable=False)
+    mime_type = Column(String, nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    drive_file_id = Column(String, nullable=False)
+    drive_view_link = Column(Text, nullable=True)
+    drive_download_link = Column(Text, nullable=True)
+    uploaded_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+Index("ix_ticket_attachments_ticket_id", TicketAttachment.ticket_id)
+Index("ix_ticket_attachments_phase", TicketAttachment.phase)
+
+
 # =========================
 # Monitoramento de conectividade (snapshot atual por loja)
 # =========================
