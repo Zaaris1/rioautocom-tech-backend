@@ -7,3 +7,6 @@ python-jose==3.3.0
 passlib==1.7.4
 python-dotenv==1.0.1
 pydantic==2.10.3
+python-multipart==0.0.20
+google-api-python-client==2.166.0
+google-auth==2.38.0
