@@ -108,13 +108,14 @@ def upload_ticket_file(
     filename: str,
     mime_type: str,
     data: bytes,
+    ticket_folder_name: Optional[str] = None,
 ) -> Dict[str, Optional[str]]:
     root_folder = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
     if not root_folder:
         raise RuntimeError("GOOGLE_DRIVE_FOLDER_ID não configurado.")
 
     service = get_drive_service()
-    ticket_folder = get_or_create_folder(root_folder, f"chamado-{ticket_id}")
+    ticket_folder = get_or_create_folder(root_folder, ticket_folder_name or f"chamado-{ticket_id}")
     phase_folder = get_or_create_folder(ticket_folder, "abertura" if phase == "ABERTURA" else "fechamento")
 
     media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mime_type, resumable=False)
