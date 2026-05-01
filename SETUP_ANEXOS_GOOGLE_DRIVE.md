@@ -1,39 +1,57 @@
-# Configuração dos anexos no Google Drive
+# Anexos de chamados no Google Drive usando OAuth
 
-## Variáveis de ambiente no Render
+Esta versão usa OAuth da conta Google proprietária do Drive. Assim os arquivos enviados pelo app usam o armazenamento dessa conta, incluindo o plano Google One/Drive contratado.
 
-Configure no serviço do backend:
+## Variáveis obrigatórias no Render
+
+No serviço do backend, configure:
 
 ```env
+GOOGLE_DRIVE_AUTH_MODE=oauth
 GOOGLE_DRIVE_FOLDER_ID=1W6BSp3ipj83dNoi6-wen-tupR6kBMk3J
-GOOGLE_SERVICE_ACCOUNT_FILE=/etc/secrets/google-drive-service-account.json
+GOOGLE_OAUTH_CLIENT_ID=<client_id_do_google_cloud>
+GOOGLE_OAUTH_CLIENT_SECRET=<client_secret_do_google_cloud>
+GOOGLE_OAUTH_REFRESH_TOKEN=<refresh_token_gerado_no_oauth_playground>
 GOOGLE_DRIVE_PUBLIC_LINKS=true
-MAX_IMAGE_MB=10
-MAX_VIDEO_MB=80
+MAX_IMAGE_MB=15
+MAX_VIDEO_MB=90
 MAX_ATTACHMENTS_PER_PHASE=5
 ```
 
-## Secret File no Render
+## Variáveis antigas da conta de serviço
 
-Crie um Secret File chamado:
+Com OAuth, estas configurações antigas não são mais necessárias:
 
-```txt
-google-drive-service-account.json
+```env
+GOOGLE_SERVICE_ACCOUNT_FILE=/etc/secrets/google-drive-service-account.json
+GOOGLE_SERVICE_ACCOUNT_JSON=...
 ```
 
-Cole nele o conteúdo JSON da conta de serviço.
+Elas podem ficar no Render sem atrapalhar se `GOOGLE_DRIVE_AUTH_MODE=oauth` estiver configurada, mas o ideal é removê-las depois que o upload estiver validado.
 
-O Render disponibiliza esse arquivo em:
+## Drive API
+
+A Google Drive API precisa estar ativa no projeto do Google Cloud usado pelo OAuth Client.
+
+## Pasta do Drive
+
+A variável `GOOGLE_DRIVE_FOLDER_ID` deve apontar para a pasta raiz onde os anexos serão organizados.
+
+A estrutura criada automaticamente será:
 
 ```txt
-/etc/secrets/google-drive-service-account.json
+RioAutocom - Anexos dos Chamados
+└── chamado-123
+    ├── abertura
+    └── fechamento
 ```
 
-## Observações
+## Observação sobre Service Account
 
-- A pasta do Drive precisa estar compartilhada com a conta de serviço como **Editor**.
-- O backend cria subpastas automaticamente por chamado:
-  - `chamado-<id>/abertura`
-  - `chamado-<id>/fechamento`
-- Por padrão, os arquivos enviados recebem permissão de leitura por link (`GOOGLE_DRIVE_PUBLIC_LINKS=true`) para que possam ser abertos pelo app.
-- Não envie o JSON da conta de serviço para o GitHub.
+A conta de serviço foi abandonada para upload porque o Google retornou erro de cota:
+
+```txt
+Service Accounts do not have storage quota.
+```
+
+Com OAuth, o upload é feito em nome da conta Google autorizada e consome a cota dessa conta.
