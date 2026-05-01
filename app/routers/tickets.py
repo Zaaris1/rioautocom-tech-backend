@@ -1,24 +1,25 @@
 import uuid, json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, File, Form, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
 from app.database import get_db
 from app.models import (
-    Ticket, TicketUpdate, TicketClosure,
+    Ticket, TicketUpdate, TicketClosure, TicketAttachment,
     Store, ClientAccess, ClientNetworkAccess, User,
     ROLE_ADMIN, ROLE_TECH, ROLE_CLIENT
 )
 from app.schemas import (
     TicketCreate, TicketOut, TicketDetail,
     AssignRequest, CommentRequest, CloseRequest, StatusRequest, TicketUpdateOut,
-    EditClosureRequest,  # ✅ NOVO (opção 2)
+    EditClosureRequest, TicketAttachmentOut,  # ✅ NOVO (opção 2)
 )
 from app.deps import get_current_user
+from app.drive_storage import upload_ticket_file
 
 router = APIRouter()
 
@@ -27,6 +28,161 @@ VALID_PRIORITIES = {"NORMAL", "URGENTE"}
 
 # ✅ alinhado ao Enum do schemas.py e ao frontend
 VALID_TYPES = {"REPARO", "SUPORTE", "VISITA", "MANUTENCAO"}
+
+
+ALLOWED_IMAGE_MIME = {"image/jpeg", "image/png", "image/webp"}
+ALLOWED_VIDEO_MIME = {"video/mp4", "video/quicktime", "video/webm"}
+ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".webm"}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(str(__import__("os").getenv(name, default)).strip())
+    except Exception:
+        return default
+
+
+def max_image_bytes() -> int:
+    return _env_int("MAX_IMAGE_MB", 10) * 1024 * 1024
+
+
+def max_video_bytes() -> int:
+    return _env_int("MAX_VIDEO_MB", 80) * 1024 * 1024
+
+
+def max_attachments_per_phase() -> int:
+    return _env_int("MAX_ATTACHMENTS_PER_PHASE", 5)
+
+
+def normalize_phase(value: str) -> str:
+    phase = str(value or "").strip().upper()
+    if phase in ("ABERTURA", "OPENING", "CREATE"):
+        return "ABERTURA"
+    if phase in ("FECHAMENTO", "CLOSING", "CLOSE"):
+        return "FECHAMENTO"
+    raise HTTPException(status_code=400, detail="Fase de anexo inválida")
+
+
+def attachment_out(a: TicketAttachment) -> TicketAttachmentOut:
+    return TicketAttachmentOut(
+        id=a.id,
+        ticket_id=a.ticket_id,
+        phase=a.phase,
+        original_filename=a.original_filename,
+        mime_type=a.mime_type,
+        size_bytes=a.size_bytes,
+        drive_file_id=a.drive_file_id,
+        drive_view_link=a.drive_view_link,
+        drive_download_link=a.drive_download_link,
+        created_at=a.created_at.isoformat() if a.created_at else None,
+    )
+
+
+def _file_ext(filename: str) -> str:
+    import os
+    return os.path.splitext(str(filename or ""))[1].lower()
+
+
+def validate_upload_file(file: UploadFile, data: bytes) -> None:
+    filename = file.filename or "arquivo"
+    mime = (file.content_type or "application/octet-stream").lower()
+    ext = _file_ext(filename)
+
+    if ext not in ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail=f"Tipo de arquivo não permitido: {filename}")
+
+    size = len(data or b"")
+    if size <= 0:
+        raise HTTPException(status_code=400, detail=f"Arquivo vazio: {filename}")
+
+    is_image = mime in ALLOWED_IMAGE_MIME or ext in {".jpg", ".jpeg", ".png", ".webp"}
+    is_video = mime in ALLOWED_VIDEO_MIME or ext in {".mp4", ".mov", ".webm"}
+
+    if not is_image and not is_video:
+        raise HTTPException(status_code=400, detail=f"Formato inválido: {filename}")
+
+    if is_image and size > max_image_bytes():
+        raise HTTPException(status_code=400, detail=f"Imagem acima do limite de {max_image_bytes() // 1024 // 1024} MB: {filename}")
+
+    if is_video and size > max_video_bytes():
+        raise HTTPException(status_code=400, detail=f"Vídeo acima do limite de {max_video_bytes() // 1024 // 1024} MB: {filename}")
+
+
+def save_ticket_attachments(
+    *,
+    db: Session,
+    ticket: Ticket,
+    user: User,
+    phase: str,
+    files: Optional[List[UploadFile]],
+) -> List[TicketAttachment]:
+    phase = normalize_phase(phase)
+    clean_files = [f for f in (files or []) if f and f.filename]
+    if not clean_files:
+        return []
+
+    current_count = db.query(TicketAttachment).filter(
+        TicketAttachment.ticket_id == ticket.id,
+        TicketAttachment.phase == phase,
+    ).count()
+
+    if current_count + len(clean_files) > max_attachments_per_phase():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Limite de {max_attachments_per_phase()} anexos por fase do chamado excedido",
+        )
+
+    created: List[TicketAttachment] = []
+    for file in clean_files:
+        data = file.file.read()
+        validate_upload_file(file, data)
+
+        mime = (file.content_type or "application/octet-stream").lower()
+        drive = upload_ticket_file(
+            ticket_id=ticket.id,
+            phase=phase,
+            filename=file.filename or "arquivo",
+            mime_type=mime,
+            data=data,
+        )
+
+        attachment = TicketAttachment(
+            id=str(uuid.uuid4()),
+            ticket_id=ticket.id,
+            phase=phase,
+            original_filename=file.filename or "arquivo",
+            mime_type=mime,
+            size_bytes=len(data),
+            drive_file_id=drive["drive_file_id"],
+            drive_view_link=drive.get("drive_view_link"),
+            drive_download_link=drive.get("drive_download_link"),
+            uploaded_by_user_id=user.id,
+        )
+        db.add(attachment)
+        created.append(attachment)
+
+    if created:
+        add_update(
+            db,
+            ticket.id,
+            user.id,
+            "ATTACHMENT",
+            note=f"{len(created)} anexo(s) enviado(s) na {'abertura' if phase == 'ABERTURA' else 'conclusão'}",
+            payload={"phase": phase, "count": len(created)},
+        )
+
+    return created
+
+
+def make_ticket_out(t: Ticket, store_name: Optional[str] = None) -> TicketOut:
+    return TicketOut(
+        id=t.id, store_id=t.store_id, store_name=store_name, status=t.status,
+        problem=t.problem, type=t.type, priority=t.priority,
+        requester_name=t.requester_name, local=t.local,
+        assigned_tech_id=t.assigned_tech_id,
+        opened_at=t.opened_at.isoformat() if t.opened_at else None,
+        updated_at=t.updated_at.isoformat() if t.updated_at else None,
+    )
 
 
 def add_update(
@@ -153,6 +309,105 @@ def create_ticket(
     )
 
 
+# ---------- Create with attachments (ADMIN only) ----------
+@router.post("/with-attachments", response_model=TicketOut)
+def create_ticket_with_attachments(
+    store_id: str = Form(...),
+    requester_name: Optional[str] = Form(None),
+    local: Optional[str] = Form(None),
+    problem: str = Form(...),
+    type: str = Form(...),
+    priority: str = Form(...),
+    files: Optional[List[UploadFile]] = File(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role != ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Apenas admin cria chamado")
+
+    store = db.query(Store).filter(Store.id == store_id, Store.active == True).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Loja não encontrada/ativa")
+
+    if type not in VALID_TYPES:
+        raise HTTPException(status_code=400, detail="Tipo de chamado inválido")
+    if priority not in VALID_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Prioridade inválida")
+
+    clean_problem = (problem or "").strip()
+    if len(clean_problem) < 5:
+        raise HTTPException(status_code=400, detail="Descreva o problema com pelo menos 5 caracteres")
+
+    t = Ticket(
+        id=str(uuid.uuid4()),
+        store_id=store_id,
+        opened_by_admin_id=user.id,
+        requester_name=(requester_name or "").strip() or None,
+        local=(local or "").strip() or None,
+        problem=clean_problem,
+        type=type,
+        priority=priority,
+        status="ABERTO",
+        opened_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(t)
+    add_update(db, t.id, user.id, "CREATE", note="Chamado criado", payload={"status": "ABERTO"})
+    save_ticket_attachments(db=db, ticket=t, user=user, phase="ABERTURA", files=files)
+    db.commit()
+
+    return make_ticket_out(t, store.name)
+
+
+# ---------- Attachments ----------
+@router.get("/{ticket_id}/attachments", response_model=list[TicketAttachmentOut])
+def list_ticket_attachments(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+    ensure_can_view_ticket(db, user, t)
+
+    rows = db.query(TicketAttachment).filter(
+        TicketAttachment.ticket_id == ticket_id
+    ).order_by(TicketAttachment.created_at.asc()).all()
+    return [attachment_out(a) for a in rows]
+
+
+@router.post("/{ticket_id}/attachments", response_model=list[TicketAttachmentOut])
+def upload_ticket_attachments(
+    ticket_id: str,
+    phase: str = Form(...),
+    files: Optional[List[UploadFile]] = File(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+
+    phase_norm = normalize_phase(phase)
+
+    if phase_norm == "ABERTURA":
+        if user.role != ROLE_ADMIN:
+            raise HTTPException(status_code=403, detail="Apenas admin anexa arquivos na abertura")
+    else:
+        if user.role not in (ROLE_TECH, ROLE_ADMIN):
+            raise HTTPException(status_code=403, detail="Apenas técnico/admin anexa arquivos no fechamento")
+        if user.role == ROLE_TECH:
+            ensure_assigned_to_user(t, user)
+
+    created = save_ticket_attachments(db=db, ticket=t, user=user, phase=phase_norm, files=files)
+    t.updated_at = datetime.utcnow()
+    db.add(t)
+    db.commit()
+
+    return [attachment_out(a) for a in created]
+
+
 # ---------- List (by role + filters) ----------
 @router.get("/", response_model=list[TicketOut])
 def list_tickets(
@@ -265,7 +520,13 @@ def get_ticket(
         for u in rows
     ]
 
-    return {"ticket": ticket, "updates": updates}
+    attachments_rows = db.query(TicketAttachment).filter(
+        TicketAttachment.ticket_id == ticket_id
+    ).order_by(TicketAttachment.created_at.asc()).all()
+
+    attachments = [attachment_out(a) for a in attachments_rows]
+
+    return {"ticket": ticket, "updates": updates, "attachments": attachments}
 
 
 # ---------- Edit ticket (ADMIN only) ----------
@@ -612,6 +873,58 @@ def comment_ticket(
     db.commit()
 
     return {"ok": True}
+
+
+# ---------- Close with attachments ----------
+@router.post("/{ticket_id}/close-with-attachments", response_model=TicketOut)
+def close_ticket_with_attachments(
+    ticket_id: str,
+    parecer: str = Form(...),
+    files: Optional[List[UploadFile]] = File(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role not in (ROLE_TECH, ROLE_ADMIN):
+        raise HTTPException(status_code=403, detail="Apenas técnico/admin")
+
+    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+
+    ensure_assigned_to_user(t, user)
+
+    if t.status not in ("EM_ATENDIMENTO", "PENDENTE", "ATRIBUIDO"):
+        raise HTTPException(status_code=409, detail="Status inválido para concluir")
+
+    if db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first():
+        raise HTTPException(status_code=409, detail="Chamado já concluído")
+
+    clean_parecer = parecer.strip()
+    if len(clean_parecer) < 15:
+        raise HTTPException(status_code=400, detail="Parecer deve ter pelo menos 15 caracteres")
+
+    save_ticket_attachments(db=db, ticket=t, user=user, phase="FECHAMENTO", files=files)
+
+    db.add(TicketClosure(
+        ticket_id=t.id,
+        resolution_text=clean_parecer,
+        closed_by_user_id=user.id,
+    ))
+
+    old = t.status
+    t.status = "CONCLUIDO"
+    t.closed_at = datetime.utcnow()
+    t.updated_at = datetime.utcnow()
+    db.add(t)
+
+    add_update(db, t.id, user.id, "CLOSE", note="Concluído com parecer", payload={"len": len(clean_parecer)})
+    if old != "CONCLUIDO":
+        add_update(db, t.id, user.id, "STATUS_CHANGE", payload={"from": old, "to": "CONCLUIDO"})
+
+    db.commit()
+
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+    return make_ticket_out(t, store.name if store else None)
 
 
 # ---------- Close ----------
