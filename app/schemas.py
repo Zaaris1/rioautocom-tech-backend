@@ -153,6 +153,19 @@ class TicketUpdateOut(BaseModel):
     payload_json: Optional[str] = None
 
 
+class TicketAttachmentOut(BaseModel):
+    id: str
+    ticket_id: str
+    phase: str
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    drive_file_id: str
+    drive_view_link: Optional[str] = None
+    drive_download_link: Optional[str] = None
+    created_at: Optional[str] = None
+
+
 class EditClosureRequest(BaseModel):
     parecer: str = Field(min_length=15, max_length=10000)
 
