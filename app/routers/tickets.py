@@ -288,6 +288,16 @@ class TicketEditRequest(BaseModel):
         extra = "forbid"
 
 
+class ReopenTicketRequest(BaseModel):
+    delete_closing_attachments: bool = Field(
+        default=False,
+        description="Se true, remove também os anexos enviados na fase de fechamento.",
+    )
+
+    class Config:
+        extra = "forbid"
+
+
 def _norm_str(v: Optional[str]) -> Optional[str]:
     if v is None:
         return None
@@ -665,6 +675,87 @@ def edit_ticket(
         opened_at=t.opened_at.isoformat() if t.opened_at else None,
         updated_at=t.updated_at.isoformat() if t.updated_at else None,
     )
+
+
+# ---------- Reopen (ADMIN only) ----------
+@router.post("/{ticket_id}/reopen", response_model=TicketOut)
+def reopen_ticket(
+    ticket_id: str,
+    body: Optional[ReopenTicketRequest] = Body(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role != ROLE_ADMIN:
+        raise HTTPException(status_code=403, detail="Apenas admin pode reabrir chamado")
+
+    t = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Chamado não encontrado")
+
+    if t.status != "CONCLUIDO":
+        raise HTTPException(status_code=409, detail="Somente chamados CONCLUÍDOS podem ser reabertos")
+
+    store = db.query(Store).filter(Store.id == t.store_id).first()
+    closure = db.query(TicketClosure).filter(TicketClosure.ticket_id == t.id).first()
+    delete_closing_attachments = bool(body.delete_closing_attachments) if body else False
+
+    old_status = t.status
+    previous_payload = {
+        "previous_status": t.status,
+        "new_status": "ABERTO",
+        "previous_assigned_tech_id": t.assigned_tech_id,
+        "previous_assigned_at": t.assigned_at.isoformat() if t.assigned_at else None,
+        "previous_started_at": t.started_at.isoformat() if t.started_at else None,
+        "previous_closed_at": t.closed_at.isoformat() if t.closed_at else None,
+        "previous_resolution_text": closure.resolution_text if closure else None,
+        "previous_closed_by_user_id": closure.closed_by_user_id if closure else None,
+        "previous_closure_closed_at": closure.closed_at.isoformat() if closure and closure.closed_at else None,
+        "delete_closing_attachments": delete_closing_attachments,
+        "deleted_closing_attachments_count": 0,
+    }
+
+    if delete_closing_attachments:
+        closing_attachments = db.query(TicketAttachment).filter(
+            TicketAttachment.ticket_id == t.id,
+            TicketAttachment.phase == "FECHAMENTO",
+        ).all()
+        previous_payload["deleted_closing_attachments_count"] = len(closing_attachments)
+        for attachment in closing_attachments:
+            db.delete(attachment)
+
+    if closure:
+        db.delete(closure)
+
+    t.status = "ABERTO"
+    t.assigned_tech_id = None
+    t.assigned_at = None
+    t.started_at = None
+    t.closed_at = None
+    t.updated_at = datetime.utcnow()
+
+    db.add(t)
+
+    add_update(
+        db,
+        t.id,
+        user.id,
+        "REOPEN",
+        note="Chamado reaberto pelo admin e devolvido para a fila geral.",
+        payload=previous_payload,
+    )
+    add_update(
+        db,
+        t.id,
+        user.id,
+        "STATUS_CHANGE",
+        note="Chamado reaberto",
+        payload={"from": old_status, "to": "ABERTO"},
+    )
+
+    db.commit()
+    db.refresh(t)
+
+    return make_ticket_out(t, store.name if store else None)
 
 
 # ---------- Updates ----------
