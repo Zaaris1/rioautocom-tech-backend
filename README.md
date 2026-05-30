@@ -1,168 +1,68 @@
-# Barbearia Agenda V1.10
 
-Versão com comissão dos barbeiros, relatório por barbeiro e tela de bloqueio comercial mais profissional.
+# RioAutocom Tech — Backend FINAL (MVP completo)
 
-## Principais recursos acumulados
+API para:
+- Admin Web (gestão)
+- App Técnico (atendimento)
+- App Cliente (consulta)
 
-- Multi-barbearias
-- Painel master
-- Controle de mensalidades e bloqueio
-- Portal inicial cliente/barbeiro
-- Agendamento público
-- Agenda interna
-- Pix manual com QR Code e copia e cola
-- Confirmação por WhatsApp
-- Lembrete por WhatsApp
-- Relatórios financeiros
-- PDF/Salvar relatório
-- Identidade visual por barbearia
-- Upload de logo, banner e favicon pelo painel
-- Comissão dos barbeiros
-- Relatório por barbeiro
-- Tela de bloqueio comercial mais bonita
-- Responsivo/mobile ajustado
+## Stack
+- FastAPI
+- PostgreSQL (Neon)
+- SQLAlchemy 2.x
+- JWT
+- Driver Postgres: psycopg (v3) — compatível com Python 3.13 (Render)
 
-## Arquivos alterados na V1.10
+## Admin inicial (seed)
+- username: admin
+- password: 040126
 
-Substitua no GitHub:
+> Recomendação: após logar, use `/auth/change-password` e troque a senha do admin.
 
-```txt
-src/lib/api.js
-src/pages/Barbeiros.jsx
-src/pages/Financeiro.jsx
-src/pages/Login.jsx
-src/styles/global.css
-README.md
+## Variáveis de ambiente (Render)
+Obrigatórias:
+- DATABASE_URL  (string do Neon; pode ser `postgresql://...`)
+- SECRET_KEY    (chave do JWT)
+
+Opcionais:
+- ALGORITHM=HS256
+- ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+## Deploy no Render
+Build Command:
+```
+pip install -r requirements.txt
+```
+Start Command:
+```
+uvicorn app.main:app --host 0.0.0.0 --port 10000
 ```
 
-Suba também o SQL novo:
+## Regras do seu negócio (implementadas)
+- Cliente só consulta (não cria/edita chamados).
+- Chamado só é criado por ADMIN.
+- Técnico pode:
+  - ver ABERTO (fila) e assumir (vira ATRIBUIDO)
+  - iniciar (EM_ATENDIMENTO)
+  - pendenciar (PENDENTE)
+  - concluir (CONCLUIDO) **somente com parecer obrigatório**
+- Tudo gera `ticket_updates` (auditoria).
 
-```txt
-database/011_comissoes_relatorio_barbeiro_bloqueio.sql
-```
+## Convenções
+Status:
+- ABERTO
+- ATRIBUIDO
+- EM_ATENDIMENTO
+- PENDENTE
+- CONCLUIDO
+- CANCELADO
 
-## SQL
+Prioridade:
+- Normal
+- Urgente
 
-Depois de subir os arquivos no GitHub, rode no Supabase somente:
-
-```txt
-database/011_comissoes_relatorio_barbeiro_bloqueio.sql
-```
-
-Abra o arquivo, copie o conteúdo completo e cole no SQL Editor do Supabase.
-
-## Comissão dos barbeiros
-
-No painel da barbearia:
-
-```txt
-Barbeiros > Editar barbeiro > Comissão do barbeiro
-```
-
-Opções:
-
-- Comissão desativada
-- Comissão percentual sobre atendimentos concluídos
-- Comissão fixa por atendimento concluído
-
-A comissão é calculada no relatório financeiro sobre atendimentos com status `CONCLUIDO`.
-
-## Relatório por barbeiro
-
-No menu:
-
-```txt
-Financeiro
-```
-
-Agora a seção `Resultado por barbeiro` mostra:
-
-- faturamento recebido
-- quantidade de concluídos
-- regra de comissão
-- valor da comissão
-- líquido estimado da barbearia
-
-Clique no barbeiro para abrir o relatório detalhado dele no mês.
-
-## Tela de bloqueio comercial
-
-Quando uma barbearia estiver bloqueada por mensalidade, a tela de login mostra um card comercial explicando o bloqueio, em vez de apenas um erro simples.
-
-## Observação Cloudflare
-
-O pacote continua sem `package-lock.json` para evitar o problema do Cloudflare com `npm clean-install`.
-
-## V1.11 — Agenda avançada, meus agendamentos e mensagens WhatsApp personalizadas
-
-Novidades desta versão:
-
-- Folgas, pausas, almoço e bloqueios manuais na agenda.
-- Bloqueios por barbeiro ou para todos os barbeiros.
-- Bloqueio de horários também afeta a página pública de agendamento.
-- Página pública para cliente consultar seus agendamentos pelo WhatsApp.
-- Cliente pode cancelar agendamentos futuros ainda pendentes/agendados/confirmados.
-- Mensagens WhatsApp personalizáveis por barbearia:
-  - confirmação;
-  - lembrete;
-  - cancelamento.
-
-### SQL novo
-
-Depois de substituir os arquivos no GitHub, rode no Supabase:
-
-```txt
-database/012_agenda_cliente_whatsapp.sql
-```
-
-Abra o arquivo, copie todo o conteúdo e cole no SQL Editor.
-
-### Links novos
-
-Para a barbearia demo:
-
-```txt
-https://barbearia-agenda.pages.dev/meus-agendamentos/barbearia-demo
-```
-
-Modelo geral:
-
-```txt
-https://barbearia-agenda.pages.dev/meus-agendamentos/slug-da-barbearia
-```
-
-### Onde configurar mensagens WhatsApp
-
-No painel da barbearia:
-
-```txt
-Configurações > Mensagens WhatsApp
-```
-
-Variáveis disponíveis:
-
-```txt
-{cliente}
-{barbearia}
-{servico}
-{barbeiro}
-{data}
-{hora}
-{hora_fim}
-{valor}
-{endereco}
-{telefone_barbearia}
-{status}
-{pagamento}
-{valor_pagamento}
-```
-
-
-## V1.11.1
-
-Correção de caracteres inválidos nas mensagens de WhatsApp, removendo o símbolo � quando templates ou emojis forem corrompidos por encoding.
-
-Arquivos alterados:
-- src/lib/whatsapp.js
-- src/pages/Configuracoes.jsx
-- database/013_corrige_emojis_whatsapp.sql
+Tipo:
+- Reparo
+- Instalação
+- Serviço
+- Visita técnica
