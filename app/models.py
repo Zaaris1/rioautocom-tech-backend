@@ -8,6 +8,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Index,
     Integer,
+    CheckConstraint,
 )
 from sqlalchemy.sql import func
 from app.database import Base
@@ -19,6 +20,10 @@ ROLE_CLIENT = "CLIENT"
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('ADMIN', 'TECH', 'CLIENT')", name="ck_users_role"),
+    )
+
     id = Column(String, primary_key=True)
     username = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
@@ -47,6 +52,7 @@ class Store(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     cnpj = Column(String, unique=True, nullable=False)
+    cnpj_digits = Column(String(14), unique=True, nullable=True)
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -55,6 +61,7 @@ class Store(Base):
 
 
 Index("ix_stores_network_id", Store.network_id)
+Index("ix_stores_cnpj_digits", Store.cnpj_digits, unique=True)
 
 
 # =========================
@@ -121,6 +128,12 @@ Index("ix_anydesk_accesses_active", AnyDeskAccess.active)
 # =========================
 class Ticket(Base):
     __tablename__ = "tickets"
+    __table_args__ = (
+        CheckConstraint("type IN ('REPARO', 'SUPORTE', 'VISITA', 'MANUTENCAO', 'OUTRO')", name="ck_tickets_type"),
+        CheckConstraint("priority IN ('NORMAL', 'URGENTE')", name="ck_tickets_priority"),
+        CheckConstraint("status IN ('ABERTO', 'ATRIBUIDO', 'EM_ATENDIMENTO', 'PENDENTE', 'CONCLUIDO', 'CANCELADO')", name="ck_tickets_status"),
+    )
+
     id = Column(String, primary_key=True)
     store_id = Column(String, ForeignKey("stores.id"), nullable=False)
 
