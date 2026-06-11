@@ -129,7 +129,7 @@ Index("ix_anydesk_accesses_active", AnyDeskAccess.active)
 class Ticket(Base):
     __tablename__ = "tickets"
     __table_args__ = (
-        CheckConstraint("type IN ('REPARO', 'SUPORTE', 'VISITA', 'MANUTENCAO', 'OUTRO')", name="ck_tickets_type"),
+        CheckConstraint("type IN ('REPARO', 'SUPORTE', 'VISITA', 'MANUTENCAO', 'OUTRO', 'INSTALACAO', 'SERVICO', 'VISITA_TECNICA')", name="ck_tickets_type"),
         CheckConstraint("priority IN ('NORMAL', 'URGENTE')", name="ck_tickets_priority"),
         CheckConstraint("status IN ('ABERTO', 'ATRIBUIDO', 'EM_ATENDIMENTO', 'PENDENTE', 'CONCLUIDO', 'CANCELADO')", name="ck_tickets_status"),
     )

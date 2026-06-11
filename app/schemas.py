@@ -84,6 +84,9 @@ class TicketType(str, Enum):
     MANUTENCAO = "MANUTENCAO"
     REPARO = "REPARO"
     OUTRO = "OUTRO"
+    INSTALACAO = "INSTALACAO"
+    SERVICO = "SERVICO"
+    VISITA_TECNICA = "VISITA_TECNICA"
 
 
 class TicketPriority(str, Enum):
