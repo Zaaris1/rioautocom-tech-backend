@@ -13,6 +13,8 @@ class LoginResponse(BaseModel):
     access_token: str
     role: str
     must_change_password: bool
+    expires_at: Optional[str] = None
+    expires_in_minutes: Optional[int] = None
 
 
 class ChangePasswordRequest(BaseModel):

@@ -26,7 +26,8 @@ Obrigatórias:
 
 Opcionais:
 - ALGORITHM=HS256
-- ACCESS_TOKEN_EXPIRE_MINUTES=1440
+- ACCESS_TOKEN_EXPIRE_MINUTES=259200  # 180 dias
+- ou ACCESS_TOKEN_EXPIRE_DAYS=180
 
 ## Deploy no Render
 Build Command:
