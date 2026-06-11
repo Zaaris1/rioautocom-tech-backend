@@ -26,8 +26,7 @@ Obrigatórias:
 
 Opcionais:
 - ALGORITHM=HS256
-- ACCESS_TOKEN_EXPIRE_MINUTES=259200  # 180 dias
-- ou ACCESS_TOKEN_EXPIRE_DAYS=180
+- ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
 ## Deploy no Render
 Build Command:
@@ -67,38 +66,3 @@ Tipo:
 - Instalação
 - Serviço
 - Visita técnica
-
-## Atualização 1.1.0 — Base profissional, migrations e segurança
-
-Esta versão adiciona uma primeira camada de hardening para produção:
-
-- Alembic no backend para versionar alterações de banco.
-- Migration inicial `20260610_0001_base_hardening`.
-- Nova coluna `stores.cnpj_digits` para normalizar CNPJ somente com números.
-- Busca de monitoramento por CNPJ normalizado, sem depender de máscara.
-- Constraints básicas para `role`, `ticket.type`, `ticket.priority` e `ticket.status`.
-- CORS configurável por variável de ambiente.
-- Bloqueio de navegação/API quando `must_change_password=True`, liberando apenas `/auth/change-password` e `/auth/refresh`.
-- `AUTO_CREATE_TABLES` agora fica desativado por padrão para evitar mudanças não versionadas em produção.
-
-### Variáveis recomendadas no Render
-
-```env
-RUN_MIGRATIONS_ON_STARTUP=true
-STRICT_MIGRATIONS=false
-AUTO_CREATE_TABLES=false
-SEED_ON_STARTUP=true
-CORS_ORIGINS=https://SEU-FRONTEND.vercel.app,https://app.rioautocom.com.br
-```
-
-Se estiver subindo um banco novo do zero, use temporariamente:
-
-```env
-AUTO_CREATE_TABLES=true
-```
-
-Depois do primeiro deploy e criação das tabelas, volte para:
-
-```env
-AUTO_CREATE_TABLES=false
-```

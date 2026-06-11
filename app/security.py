@@ -9,14 +9,29 @@ pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
-# Sessão padrão: 180 dias.
-# Importante: se ACCESS_TOKEN_EXPIRE_MINUTES estiver configurado no Render,
-# ele sobrescreve este padrão. Para não pedir login todo dia, use 259200.
+
 def _token_expire_minutes() -> int:
-    days = os.getenv("ACCESS_TOKEN_EXPIRE_DAYS")
-    if days:
-        return max(1, int(float(days) * 24 * 60))
-    return max(1, int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "259200")))
+    """
+    Sessão padrão: 180 dias.
+
+    Prioridade:
+    1) ACCESS_TOKEN_EXPIRE_DAYS, ex.: 180
+    2) ACCESS_TOKEN_EXPIRE_MINUTES, ex.: 259200
+    3) padrão interno: 259200 minutos
+    """
+    raw_days = os.getenv("ACCESS_TOKEN_EXPIRE_DAYS")
+    if raw_days:
+        try:
+            return max(1, int(float(raw_days) * 24 * 60))
+        except Exception:
+            pass
+
+    raw_minutes = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "259200")
+    try:
+        return max(1, int(float(raw_minutes)))
+    except Exception:
+        return 259200
+
 
 ACCESS_TOKEN_EXPIRE_MINUTES = _token_expire_minutes()
 
@@ -29,7 +44,7 @@ def verify_password(p: str, h: str) -> bool:
     return pwd.verify(p, h)
 
 
-def _expires_at(minutes: int | None = None) -> tuple[datetime, int]:
+def _build_expiration(minutes: int | None = None) -> tuple[datetime, int]:
     token_minutes = int(minutes) if minutes is not None else ACCESS_TOKEN_EXPIRE_MINUTES
     token_minutes = max(1, token_minutes)
     expire = datetime.now(timezone.utc) + timedelta(minutes=token_minutes)
@@ -43,7 +58,7 @@ def create_access_token(data: dict, minutes: int | None = None) -> str:
 
 def create_access_token_with_expiry(data: dict, minutes: int | None = None) -> tuple[str, datetime, int]:
     to_encode = data.copy()
-    expire, token_minutes = _expires_at(minutes)
+    expire, token_minutes = _build_expiration(minutes)
     to_encode.update({"exp": expire})
     token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return token, expire, token_minutes

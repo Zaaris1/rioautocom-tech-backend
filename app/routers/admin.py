@@ -20,7 +20,6 @@ from app.schemas import (
 )
 from app.security import hash_password
 from app.deps import require_roles
-from app.cnpj_utils import normalize_cnpj, format_cnpj
 
 router = APIRouter()
 
@@ -68,10 +67,12 @@ def create_user(body: UserCreate, db: Session = Depends(get_db), _: User = Depen
         raise HTTPException(status_code=409, detail="username já existe")
 
     password = body.password
-    if not password:
-        import secrets
-        password = secrets.token_urlsafe(8)
-        # Senha temporária gerada automaticamente. Mantenha must_change_password=True para obrigar troca no primeiro acesso.
+    if body.role == ROLE_CLIENT and not password:
+        password = "402365"
+    if body.role == ROLE_TECH and not password:
+        raise HTTPException(status_code=400, detail="Técnico precisa de senha")
+    if body.role == ROLE_ADMIN and not password:
+        password = "040126"
 
     user = User(
         id=str(uuid.uuid4()),
@@ -112,12 +113,7 @@ def update_user(user_id: str, body: UserUpdate, db: Session = Depends(get_db), _
 # -------- Stores --------
 @router.post("/stores", response_model=StoreOut)
 def create_store(body: StoreCreate, db: Session = Depends(get_db), _: User = Depends(require_roles(ROLE_ADMIN))):
-    try:
-        cnpj_digits = normalize_cnpj(body.cnpj)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    if db.query(Store).filter((Store.cnpj == body.cnpj) | (Store.cnpj_digits == cnpj_digits)).first():
+    if db.query(Store).filter(Store.cnpj == body.cnpj).first():
         raise HTTPException(status_code=409, detail="CNPJ já cadastrado")
 
     # ✅ valida rede se vier
@@ -128,9 +124,8 @@ def create_store(body: StoreCreate, db: Session = Depends(get_db), _: User = Dep
 
     s = Store(
         id=str(uuid.uuid4()),
-        name=body.name.strip(),
-        cnpj=format_cnpj(cnpj_digits),
-        cnpj_digits=cnpj_digits,
+        name=body.name,
+        cnpj=body.cnpj,
         active=True,
         network_id=body.network_id
     )
@@ -149,16 +144,9 @@ def update_store(store_id: str, body: StoreUpdate, db: Session = Depends(get_db)
     s = db.query(Store).filter(Store.id == store_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
-    cnpj_digits = None
-    if body.cnpj is not None:
-        try:
-            cnpj_digits = normalize_cnpj(body.cnpj)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        if cnpj_digits != (s.cnpj_digits or ""):
-            exists = db.query(Store).filter(Store.id != store_id, Store.cnpj_digits == cnpj_digits).first()
-            if exists:
-                raise HTTPException(status_code=409, detail="CNPJ já cadastrado")
+    if body.cnpj is not None and body.cnpj != s.cnpj:
+        if db.query(Store).filter(Store.cnpj == body.cnpj).first():
+            raise HTTPException(status_code=409, detail="CNPJ já cadastrado")
 
     if body.network_id is not None:
         if body.network_id == "":
@@ -170,10 +158,9 @@ def update_store(store_id: str, body: StoreUpdate, db: Session = Depends(get_db)
             s.network_id = body.network_id
 
     if body.name is not None:
-        s.name = body.name.strip()
-    if body.cnpj is not None and cnpj_digits is not None:
-        s.cnpj = format_cnpj(cnpj_digits)
-        s.cnpj_digits = cnpj_digits
+        s.name = body.name
+    if body.cnpj is not None:
+        s.cnpj = body.cnpj
     if body.active is not None:
         s.active = body.active
 

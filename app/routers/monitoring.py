@@ -18,7 +18,6 @@ from app.models import (
     StoreMonitoringStatus,
     User,
 )
-from app.cnpj_utils import only_digits
 from app.schemas import (
     MonitoringBackupHeartbeatIn,
     MonitoringCertificateHeartbeatIn,
@@ -43,7 +42,7 @@ def _utcnow() -> datetime:
 
 
 def _digits(value: str | None) -> str:
-    return only_digits(value)
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -137,18 +136,9 @@ def _find_store_for_heartbeat(db: Session, store_id: str | None, store_cnpj: str
 
     cnpj_digits = _digits(store_cnpj)
     if cnpj_digits:
-        store = db.query(Store).filter(Store.cnpj_digits == cnpj_digits).first()
-        if store:
-            return store
-
-        # Compatibilidade para bancos ainda não migrados/preenchidos.
         stores = db.query(Store).all()
         for store in stores:
             if _digits(store.cnpj) == cnpj_digits:
-                if not getattr(store, "cnpj_digits", None):
-                    store.cnpj_digits = cnpj_digits
-                    db.add(store)
-                    db.commit()
                 return store
 
     store_name = str(store_name or "").strip()

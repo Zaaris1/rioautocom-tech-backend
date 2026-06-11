@@ -3,93 +3,49 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
-from sqlalchemy import text
 from app.seed import seed_data
 from app.routers import auth, stores, tickets, admin, networks, accesses, monitoring
 
 
+def _env_true(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "sim", "s"}
+
+
 def _cors_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", "").strip()
-    if raw:
-        return [item.strip() for item in raw.split(",") if item.strip()]
-
-    # Em produção, configure CORS_ORIGINS no Render.
-    # Exemplo: https://seu-front.vercel.app,https://app.rioautocom.com.br
-    return ["*"]
+    raw = os.getenv("CORS_ORIGINS", "*").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
 
 
+def _cors_regex() -> str | None:
+    # Ajuda a evitar erro quando o Vercel abre um deployment/preview diferente do domínio fixo.
+    # Pode desativar no Render com CORS_ALLOW_VERCEL_PREVIEWS=false.
+    if _env_true("CORS_ALLOW_VERCEL_PREVIEWS", "true"):
+        return r"https://.*\.vercel\.app"
+    return None
 
 
-def _ensure_compat_schema() -> None:
-    """Correções idempotentes para bancos já existentes.
-
-    Mantém o app funcionando mesmo se o Alembic já tiver sido marcado como aplicado
-    ou se uma migration anterior tiver falhado no meio do caminho.
-    """
-    if os.getenv("RUN_COMPAT_SCHEMA_FIXES", "true").lower() not in {"1", "true", "yes", "sim"}:
-        return
-
-    try:
-        with engine.begin() as conn:
-            if engine.dialect.name == "postgresql":
-                conn.execute(text("ALTER TABLE stores ADD COLUMN IF NOT EXISTS cnpj_digits VARCHAR(14)"))
-                conn.execute(text("UPDATE stores SET cnpj_digits = regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') WHERE cnpj_digits IS NULL"))
-                conn.execute(text("""
-                    WITH ranked AS (
-                        SELECT id, cnpj_digits, row_number() OVER (PARTITION BY cnpj_digits ORDER BY created_at NULLS LAST, id) AS rn
-                        FROM stores
-                        WHERE cnpj_digits IS NOT NULL AND cnpj_digits <> ''
-                    )
-                    UPDATE stores s
-                    SET cnpj_digits = NULL
-                    FROM ranked r
-                    WHERE s.id = r.id AND r.rn > 1
-                """))
-                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_stores_cnpj_digits ON stores (cnpj_digits) WHERE cnpj_digits IS NOT NULL"))
-            else:
-                # SQLite/dev local: tenta criar a coluna; se já existir, ignora.
-                try:
-                    conn.execute(text("ALTER TABLE stores ADD COLUMN cnpj_digits VARCHAR(14)"))
-                except Exception:
-                    pass
-    except Exception as exc:
-        if os.getenv("STRICT_COMPAT_SCHEMA_FIXES", "false").lower() in {"1", "true", "yes", "sim"}:
-            raise
-        print(f"[WARN] Não foi possível aplicar compat schema fixes: {exc}")
-
-def _run_startup_migrations() -> None:
-    if os.getenv("RUN_MIGRATIONS_ON_STARTUP", "true").lower() not in {"1", "true", "yes", "sim"}:
-        return
-    try:
-        from alembic import command
-        from alembic.config import Config
-
-        cfg = Config("alembic.ini")
-        command.upgrade(cfg, "head")
-    except Exception as exc:
-        if os.getenv("STRICT_MIGRATIONS", "false").lower() in {"1", "true", "yes", "sim"}:
-            raise
-        print(f"[WARN] Não foi possível executar Alembic automaticamente: {exc}")
-
-
-app = FastAPI(title="RioAutocom Tech API", version="1.1.0-hardening")
+app = FastAPI(title="RioAutocom Tech API", version="1.0.1-session-safe")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
+    allow_origin_regex=_cors_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-_run_startup_migrations()
-_ensure_compat_schema()
+# Mantém o comportamento original funcional: não roda Alembic e não altera schema existente.
+Base.metadata.create_all(bind=engine)
+seed_data()
 
-if os.getenv("AUTO_CREATE_TABLES", "false").lower() in {"1", "true", "yes", "sim"}:
-    Base.metadata.create_all(bind=engine)
 
-if os.getenv("SEED_ON_STARTUP", "true").lower() in {"1", "true", "yes", "sim"}:
-    seed_data()
+@app.get("/health")
+def health():
+    return {"ok": True, "version": "1.0.1-session-safe"}
+
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])

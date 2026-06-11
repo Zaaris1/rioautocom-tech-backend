@@ -10,5 +10,3 @@ pydantic==2.10.3
 python-multipart==0.0.20
 google-api-python-client==2.166.0
 google-auth==2.38.0
-
-alembic==1.14.0
