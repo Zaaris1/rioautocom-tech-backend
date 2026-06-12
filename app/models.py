@@ -230,3 +230,53 @@ class StoreMonitoringStatus(Base):
 
 Index("ix_store_monitoring_reported_status", StoreMonitoringStatus.reported_status)
 Index("ix_store_monitoring_last_seen_at", StoreMonitoringStatus.last_seen_at)
+
+# =========================
+# Planos, mensalidades e bloqueio de cliente
+# =========================
+class BillingPlan(Base):
+    __tablename__ = "billing_plans"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    monthly_price_cents = Column(Integer, nullable=False, default=0)
+    max_stores = Column(Integer, nullable=True)
+    max_users = Column(Integer, nullable=True)
+    features_json = Column(Text, nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+Index("ix_billing_plans_active", BillingPlan.active)
+
+
+class ClientSubscription(Base):
+    __tablename__ = "client_subscriptions"
+
+    id = Column(String, primary_key=True)
+    client_user_id = Column(String, ForeignKey("users.id"), nullable=False, unique=True)
+    plan_id = Column(String, ForeignKey("billing_plans.id"), nullable=True)
+    status = Column(String, nullable=False, default="ATIVO")
+    monthly_price_cents = Column(Integer, nullable=True)
+    due_day = Column(Integer, nullable=True)
+    next_due_date = Column(DateTime(timezone=True), nullable=True)
+    trial_until = Column(DateTime(timezone=True), nullable=True)
+    blocked_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+Index("ix_client_subscriptions_client_user_id", ClientSubscription.client_user_id)
+Index("ix_client_subscriptions_status", ClientSubscription.status)
+Index("ix_client_subscriptions_next_due_date", ClientSubscription.next_due_date)

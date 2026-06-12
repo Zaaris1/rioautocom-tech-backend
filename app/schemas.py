@@ -334,3 +334,75 @@ class MonitoringHeartbeatResponse(BaseModel):
     store_name: str
     status: str
     checked_at: Optional[str] = None
+
+# ---------- Billing / Planos ----------
+from datetime import datetime
+
+
+class BillingPlanCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    monthly_price_cents: int = Field(default=0, ge=0)
+    max_stores: Optional[int] = Field(default=None, ge=0)
+    max_users: Optional[int] = Field(default=None, ge=0)
+    features_json: Optional[str] = Field(default=None, max_length=5000)
+    active: bool = True
+
+
+class BillingPlanUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    monthly_price_cents: Optional[int] = Field(default=None, ge=0)
+    max_stores: Optional[int] = Field(default=None, ge=0)
+    max_users: Optional[int] = Field(default=None, ge=0)
+    features_json: Optional[str] = Field(default=None, max_length=5000)
+    active: Optional[bool] = None
+
+
+class BillingPlanOut(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    monthly_price_cents: int
+    max_stores: Optional[int] = None
+    max_users: Optional[int] = None
+    features_json: Optional[str] = None
+    active: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ClientSubscriptionUpsert(BaseModel):
+    plan_id: Optional[str] = None
+    status: str = Field(default="ATIVO", max_length=30)
+    monthly_price_cents: Optional[int] = Field(default=None, ge=0)
+    due_day: Optional[int] = Field(default=None, ge=1, le=31)
+    next_due_date: Optional[datetime] = None
+    trial_until: Optional[datetime] = None
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class ClientSubscriptionOut(BaseModel):
+    id: Optional[str] = None
+    client_user_id: str
+    client_username: Optional[str] = None
+    plan_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    status: str
+    monthly_price_cents: Optional[int] = None
+    due_day: Optional[int] = None
+    next_due_date: Optional[str] = None
+    trial_until: Optional[str] = None
+    blocked_at: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class MySubscriptionOut(BaseModel):
+    status: str
+    blocked: bool
+    plan_name: Optional[str] = None
+    next_due_date: Optional[str] = None
+    trial_until: Optional[str] = None
+    message: Optional[str] = None

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 from app.seed import seed_data
-from app.routers import auth, stores, tickets, admin, networks, accesses, monitoring
+from app.routers import auth, stores, tickets, admin, networks, accesses, monitoring, billing
 
 
 def _env_true(name: str, default: str = "false") -> bool:
@@ -26,7 +26,7 @@ def _cors_regex() -> str | None:
     return None
 
 
-app = FastAPI(title="RioAutocom Tech API", version="1.0.1-session-safe")
+app = FastAPI(title="RioAutocom Tech API", version="1.0.2-billing")
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +44,7 @@ seed_data()
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "1.0.1-session-safe"}
+    return {"ok": True, "version": "1.0.2-billing"}
 
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
@@ -54,3 +54,4 @@ app.include_router(stores.router, prefix="/stores", tags=["Stores"])
 app.include_router(tickets.router, prefix="/tickets", tags=["Tickets"])
 app.include_router(accesses.router, prefix="/accesses", tags=["Acessos"])
 app.include_router(monitoring.router, prefix="/monitoring", tags=["Monitoring"])
+app.include_router(billing.router, prefix="/billing", tags=["Billing"])
