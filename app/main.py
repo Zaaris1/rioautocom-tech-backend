@@ -26,7 +26,7 @@ def _cors_regex() -> str | None:
     return None
 
 
-app = FastAPI(title="RioAutocom Tech API", version="1.0.2-billing")
+app = FastAPI(title="RioAutocom Tech API", version="1.0.3-monitoring-history")
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +44,7 @@ seed_data()
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "1.0.2-billing"}
+    return {"ok": True, "version": "1.0.3-monitoring-history"}
 
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])

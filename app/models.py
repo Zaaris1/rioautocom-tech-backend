@@ -231,6 +231,32 @@ class StoreMonitoringStatus(Base):
 Index("ix_store_monitoring_reported_status", StoreMonitoringStatus.reported_status)
 Index("ix_store_monitoring_last_seen_at", StoreMonitoringStatus.last_seen_at)
 
+
+# =========================
+# Histórico de monitoramento (eventos por loja)
+# =========================
+class MonitoringEvent(Base):
+    __tablename__ = "monitoring_events"
+
+    id = Column(String, primary_key=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False)
+    category = Column(String, nullable=False)  # CONNECTIVITY | BACKUP | CERTIFICATE | SYSTEM
+    event_type = Column(String, nullable=False)
+    severity = Column(String, nullable=False, default="INFO")  # INFO | OK | WARNING | CRITICAL
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=True)
+    status_from = Column(String, nullable=True)
+    status_to = Column(String, nullable=True)
+    payload_json = Column(Text, nullable=True)
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+Index("ix_monitoring_events_store_id", MonitoringEvent.store_id)
+Index("ix_monitoring_events_occurred_at", MonitoringEvent.occurred_at)
+Index("ix_monitoring_events_category", MonitoringEvent.category)
+Index("ix_monitoring_events_severity", MonitoringEvent.severity)
+
 # =========================
 # Planos, mensalidades e bloqueio de cliente
 # =========================

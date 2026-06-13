@@ -335,6 +335,41 @@ class MonitoringHeartbeatResponse(BaseModel):
     status: str
     checked_at: Optional[str] = None
 
+
+class MonitoringEventOut(BaseModel):
+    id: str
+    store_id: str
+    store_name: Optional[str] = None
+    cnpj: Optional[str] = None
+    network_id: Optional[str] = None
+    network_name: Optional[str] = None
+    category: str
+    event_type: str
+    severity: str
+    title: str
+    message: Optional[str] = None
+    status_from: Optional[str] = None
+    status_to: Optional[str] = None
+    payload_json: Optional[str] = None
+    occurred_at: str
+    created_at: Optional[str] = None
+
+
+class MonitoringHistorySummaryOut(BaseModel):
+    total: int = 0
+    critical: int = 0
+    warning: int = 0
+    ok: int = 0
+    info: int = 0
+    connectivity: int = 0
+    backup: int = 0
+    certificate: int = 0
+
+
+class MonitoringHistoryResponse(BaseModel):
+    items: list[MonitoringEventOut]
+    summary: MonitoringHistorySummaryOut
+
 # ---------- Billing / Planos ----------
 from datetime import datetime
 

@@ -1,6 +1,7 @@
 import json
 import os
-from datetime import datetime, timezone
+from uuid import uuid4
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import or_
@@ -12,6 +13,7 @@ from app.models import (
     ClientAccess,
     ClientNetworkAccess,
     Network,
+    MonitoringEvent,
     ROLE_ADMIN,
     ROLE_TECH,
     Store,
@@ -24,6 +26,9 @@ from app.schemas import (
     MonitoringCertificateItemOut,
     MonitoringHeartbeatIn,
     MonitoringHeartbeatResponse,
+    MonitoringHistoryResponse,
+    MonitoringHistorySummaryOut,
+    MonitoringEventOut,
     MonitoringItemOut,
     MonitoringOverviewResponse,
     MonitoringStoreOut,
@@ -168,6 +173,110 @@ def _save_monitor_blob(row: StoreMonitoringStatus, blob: dict) -> None:
     row.details_json = json.dumps(blob, ensure_ascii=False)
 
 
+def _status_label(value: str | None) -> str:
+    raw = str(value or "SEM_DADOS").strip().upper()
+    labels = {
+        "ONLINE": "Online",
+        "PARCIAL": "Parcial",
+        "OFFLINE": "Offline",
+        "STALE": "Sem atualização recente",
+        "SEM_DADOS": "Sem dados",
+        "OK": "OK",
+        "ERRO": "Erro",
+        "SEM_BACKUP_ONTEM": "Sem backup ontem",
+        "SEM_LOGS": "Sem logs",
+        "NAO_CONFIRMADO": "Não confirmado",
+        "VENCIDO": "Vencido",
+        "NAO_ENCONTRADO": "Não encontrado",
+    }
+    if raw.startswith(CERT_ALERT_PREFIX):
+        return "Certificado em alerta"
+    return labels.get(raw, raw.replace("_", " ").title())
+
+
+def _severity_for_connectivity(status: str | None) -> str:
+    raw = str(status or "SEM_DADOS").upper()
+    if raw == "ONLINE":
+        return "OK"
+    if raw == "OFFLINE":
+        return "CRITICAL"
+    if raw in {"PARCIAL", "STALE", "SEM_DADOS"}:
+        return "WARNING"
+    return "INFO"
+
+
+def _severity_for_backup(status: str | None) -> str:
+    raw = str(status or "SEM_DADOS").upper()
+    if raw in {"OK", "SUCESSO", "CONFIRMADO", "NORMAL"}:
+        return "OK"
+    if raw in {"ERRO", "SEM_LOGS", "NAO_CONFIRMADO"}:
+        return "CRITICAL"
+    if raw in {"SEM_BACKUP_ONTEM", "PENDENTE", "ALERTA"}:
+        return "WARNING"
+    return "INFO" if raw == "SEM_DADOS" else "WARNING"
+
+
+def _severity_for_certificate(status: str | None) -> str:
+    raw = str(status or "SEM_DADOS").upper()
+    if raw == "OK":
+        return "OK"
+    if raw in CERT_HARD_ALERTS:
+        return "CRITICAL"
+    if raw.startswith(CERT_ALERT_PREFIX) or raw == "ALERTA":
+        return "WARNING"
+    return "INFO" if raw == "SEM_DADOS" else "WARNING"
+
+
+def _record_monitoring_event(
+    db: Session,
+    store: Store,
+    category: str,
+    event_type: str,
+    severity: str,
+    title: str,
+    message: str | None,
+    status_from: str | None,
+    status_to: str | None,
+    occurred_at: datetime | None = None,
+    payload: dict | None = None,
+) -> None:
+    event = MonitoringEvent(
+        id=str(uuid4()),
+        store_id=store.id,
+        category=str(category or "SYSTEM").upper(),
+        event_type=str(event_type or "STATUS_CHANGED").upper(),
+        severity=str(severity or "INFO").upper(),
+        title=str(title or "Evento de monitoramento")[:240],
+        message=(str(message).strip() if message else None),
+        status_from=(str(status_from).upper() if status_from else None),
+        status_to=(str(status_to).upper() if status_to else None),
+        payload_json=json.dumps(payload or {}, ensure_ascii=False) if payload else None,
+        occurred_at=occurred_at or _utcnow(),
+    )
+    db.add(event)
+
+
+def _event_to_out(event: MonitoringEvent, store: Store | None = None, network_name: str | None = None) -> MonitoringEventOut:
+    return MonitoringEventOut(
+        id=event.id,
+        store_id=event.store_id,
+        store_name=store.name if store else None,
+        cnpj=store.cnpj if store else None,
+        network_id=store.network_id if store else None,
+        network_name=network_name,
+        category=event.category,
+        event_type=event.event_type,
+        severity=event.severity,
+        title=event.title,
+        message=event.message,
+        status_from=event.status_from,
+        status_to=event.status_to,
+        payload_json=event.payload_json,
+        occurred_at=event.occurred_at.isoformat() if event.occurred_at else "",
+        created_at=event.created_at.isoformat() if event.created_at else None,
+    )
+
+
 def _extract_connectivity_items(row: StoreMonitoringStatus | None) -> list[MonitoringItemOut]:
     blob = _load_monitor_blob(row)
     data = []
@@ -303,6 +412,7 @@ def heartbeat(
         summary = f"{up_count}/{total_count} caixas OK" if total_count else "Sem caixas configurados"
 
     row = db.query(StoreMonitoringStatus).filter(StoreMonitoringStatus.store_id == store.id).first()
+    previous_status = _effective_status(row) if row else "SEM_DADOS"
     if not row:
         row = StoreMonitoringStatus(store_id=store.id)
 
@@ -334,6 +444,21 @@ def heartbeat(
     row.last_seen_at = seen_at
     _save_monitor_blob(row, blob)
 
+    if previous_status != status:
+        _record_monitoring_event(
+            db=db,
+            store=store,
+            category="CONNECTIVITY",
+            event_type="STATUS_CHANGED",
+            severity=_severity_for_connectivity(status),
+            title=f"Comunicação {_status_label(status)}",
+            message=f"Comunicação alterou de {_status_label(previous_status)} para {_status_label(status)}. {summary}.",
+            status_from=previous_status,
+            status_to=status,
+            occurred_at=checked_at,
+            payload={"up_count": int(up_count), "down_count": int(down_count), "total_count": int(total_count)},
+        )
+
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -358,12 +483,14 @@ def backup_heartbeat(
     last_event_at = _parse_dt(body.last_event_at)
 
     row = db.query(StoreMonitoringStatus).filter(StoreMonitoringStatus.store_id == store.id).first()
+    previous_backup_status = str(_extract_backup(row).get("status") or "SEM_DADOS").strip().upper() if row else "SEM_DADOS"
     if not row:
         row = StoreMonitoringStatus(store_id=store.id)
 
     blob = _load_monitor_blob(row)
+    backup_status = str(body.status or "").strip().upper() or "SEM_DADOS"
     blob["backup"] = {
-        "status": str(body.status or "").strip().upper() or "SEM_DADOS",
+        "status": backup_status,
         "summary": str(body.summary or "").strip() or None,
         "message": str(body.message or "").strip() or None,
         "task_name": str(body.task_name or "").strip() or None,
@@ -374,6 +501,26 @@ def backup_heartbeat(
     }
     row.store_name_reported = str(body.store_name or store.name).strip() or (row.store_name_reported or store.name)
     _save_monitor_blob(row, blob)
+
+    if previous_backup_status != backup_status:
+        _record_monitoring_event(
+            db=db,
+            store=store,
+            category="BACKUP",
+            event_type="STATUS_CHANGED",
+            severity=_severity_for_backup(backup_status),
+            title=f"Backup {_status_label(backup_status)}",
+            message=(str(body.summary or body.message or "Status de backup atualizado.").strip() or "Status de backup atualizado."),
+            status_from=previous_backup_status,
+            status_to=backup_status,
+            occurred_at=checked_at,
+            payload={
+                "task_name": str(body.task_name or "").strip() or None,
+                "source_name": str(body.source_name or "").strip() or None,
+                "last_event_at": last_event_at.isoformat() if last_event_at else (str(body.last_event_at or "").strip() or None),
+            },
+        )
+
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -436,6 +583,7 @@ def certificate_heartbeat(
         days_left = worst.get("days_left")
 
     row = db.query(StoreMonitoringStatus).filter(StoreMonitoringStatus.store_id == store.id).first()
+    previous_certificate_status = str(_extract_certificate(row).get("status") or "SEM_DADOS").strip().upper() if row else "SEM_DADOS"
     if not row:
         row = StoreMonitoringStatus(store_id=store.id)
 
@@ -453,6 +601,22 @@ def certificate_heartbeat(
     }
     row.store_name_reported = str(body.store_name or store.name).strip() or (row.store_name_reported or store.name)
     _save_monitor_blob(row, blob)
+
+    if previous_certificate_status != overall_status:
+        _record_monitoring_event(
+            db=db,
+            store=store,
+            category="CERTIFICATE",
+            event_type="STATUS_CHANGED",
+            severity=_severity_for_certificate(overall_status),
+            title=f"Certificado {_status_label(overall_status)}",
+            message=(str(body.summary or body.message or "Status de certificado atualizado.").strip() or "Status de certificado atualizado."),
+            status_from=previous_certificate_status,
+            status_to=overall_status,
+            occurred_at=checked_at,
+            payload={"expires_at": expires_at, "days_left": days_left, "items_count": len(items)},
+        )
+
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -497,6 +661,72 @@ def overview(
         items = [item for item in items if item.status == wanted]
 
     return MonitoringOverviewResponse(items=items)
+
+
+
+
+@router.get("/history", response_model=MonitoringHistoryResponse)
+def history(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    store_id: str | None = Query(None),
+    category: str | None = Query(None),
+    severity: str | None = Query(None),
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(120, ge=1, le=500),
+):
+    visible_rows = _visible_store_query(db, user).all()
+    visible_map = {store.id: (store, network_name) for store, network_name in visible_rows}
+    visible_ids = list(visible_map.keys())
+
+    if store_id:
+        if store_id not in visible_map:
+            raise HTTPException(status_code=404, detail="Loja não encontrada")
+        visible_ids = [store_id]
+
+    summary = MonitoringHistorySummaryOut()
+    if not visible_ids:
+        return MonitoringHistoryResponse(items=[], summary=summary)
+
+    since = _utcnow() - timedelta(days=days)
+    qdb = db.query(MonitoringEvent).filter(
+        MonitoringEvent.store_id.in_(visible_ids),
+        MonitoringEvent.occurred_at >= since,
+    )
+
+    if category:
+        qdb = qdb.filter(MonitoringEvent.category == category.strip().upper())
+    if severity:
+        qdb = qdb.filter(MonitoringEvent.severity == severity.strip().upper())
+
+    all_events = qdb.order_by(MonitoringEvent.occurred_at.desc()).limit(limit).all()
+
+    for event in all_events:
+        sev = str(event.severity or "INFO").lower()
+        cat = str(event.category or "SYSTEM").lower()
+        summary.total += 1
+        if sev == "critical":
+            summary.critical += 1
+        elif sev == "warning":
+            summary.warning += 1
+        elif sev == "ok":
+            summary.ok += 1
+        else:
+            summary.info += 1
+
+        if cat == "connectivity":
+            summary.connectivity += 1
+        elif cat == "backup":
+            summary.backup += 1
+        elif cat == "certificate":
+            summary.certificate += 1
+
+    items = []
+    for event in all_events:
+        store, network_name = visible_map.get(event.store_id, (None, None))
+        items.append(_event_to_out(event, store, network_name))
+
+    return MonitoringHistoryResponse(items=items, summary=summary)
 
 
 @router.get("/stores/{store_id}", response_model=MonitoringStoreOut)
