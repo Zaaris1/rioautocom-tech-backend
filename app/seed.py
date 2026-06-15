@@ -1,4 +1,5 @@
 import uuid
+from app.config import settings
 from app.models import User, ROLE_ADMIN, BillingPlan
 from app.security import hash_password
 from app.database import SessionLocal
@@ -11,7 +12,7 @@ def seed_data():
             db.add(User(
                 id=str(uuid.uuid4()),
                 username="admin",
-                password_hash=hash_password("040126"),
+                password_hash=hash_password(settings.default_admin_password),
                 role=ROLE_ADMIN,
                 must_change_password=True,
                 active=True,

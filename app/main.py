@@ -1,50 +1,42 @@
-import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.database import Base, engine
 from app.seed import seed_data
 from app.routers import auth, stores, tickets, admin, networks, accesses, monitoring, billing
 
 
-def _env_true(name: str, default: str = "false") -> bool:
-    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "sim", "s"}
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Mantem o comportamento original: cria tabelas faltantes e aplica seed inicial.
+    # Alembic continua opcional para uma etapa futura de migracoes versionadas.
+    Base.metadata.create_all(bind=engine)
+    seed_data()
+    yield
 
 
-def _cors_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", "*").strip()
-    if not raw or raw == "*":
-        return ["*"]
-    return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
-
-
-def _cors_regex() -> str | None:
-    # Ajuda a evitar erro quando o Vercel abre um deployment/preview diferente do domínio fixo.
-    # Pode desativar no Render com CORS_ALLOW_VERCEL_PREVIEWS=false.
-    if _env_true("CORS_ALLOW_VERCEL_PREVIEWS", "true"):
-        return r"https://.*\.vercel\.app"
-    return None
-
-
-app = FastAPI(title="RioAutocom Tech API", version="1.0.3-monitoring-history")
+app = FastAPI(
+    title=settings.app_name,
+    version=settings.app_version,
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins(),
-    allow_origin_regex=_cors_regex(),
-    allow_credentials=True,
+    allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.cors_origin_regex,
+    allow_credentials=not settings.allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mantém o comportamento original funcional: não roda Alembic e não altera schema existente.
-Base.metadata.create_all(bind=engine)
-seed_data()
-
 
 @app.get("/health")
 def health():
-    return {"ok": True, "version": "1.0.3-monitoring-history"}
+    return {"ok": True, "version": settings.app_version}
 
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])

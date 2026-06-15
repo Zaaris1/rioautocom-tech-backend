@@ -1,36 +1,17 @@
 from datetime import datetime, timedelta, timezone
-import os
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from app.config import settings
 
 # PBKDF2: compatível e estável no Render (Python 3.13)
 pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+SECRET_KEY = settings.secret_key
+ALGORITHM = settings.algorithm
 
 
 def _token_expire_minutes() -> int:
-    """
-    Sessão padrão: 180 dias.
-
-    Prioridade:
-    1) ACCESS_TOKEN_EXPIRE_DAYS, ex.: 180
-    2) ACCESS_TOKEN_EXPIRE_MINUTES, ex.: 259200
-    3) padrão interno: 259200 minutos
-    """
-    raw_days = os.getenv("ACCESS_TOKEN_EXPIRE_DAYS")
-    if raw_days:
-        try:
-            return max(1, int(float(raw_days) * 24 * 60))
-        except Exception:
-            pass
-
-    raw_minutes = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "259200")
-    try:
-        return max(1, int(float(raw_minutes)))
-    except Exception:
-        return 259200
+    return settings.access_token_expire_minutes
 
 
 ACCESS_TOKEN_EXPIRE_MINUTES = _token_expire_minutes()

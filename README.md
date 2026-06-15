@@ -22,11 +22,19 @@ API para:
 ## Variáveis de ambiente (Render)
 Obrigatórias:
 - DATABASE_URL  (string do Neon; pode ser `postgresql://...`)
-- SECRET_KEY    (chave do JWT)
+- SECRET_KEY    (chave do JWT com pelo menos 24 caracteres; a API não inicia sem isso)
 
 Opcionais:
 - ALGORITHM=HS256
-- ACCESS_TOKEN_EXPIRE_MINUTES=1440
+- ACCESS_TOKEN_EXPIRE_DAYS=180
+- ACCESS_TOKEN_EXPIRE_MINUTES=259200
+- CORS_ORIGINS=https://atendimento-rioautocom.vercel.app
+- CORS_ALLOW_VERCEL_PREVIEWS=true
+- DEFAULT_ADMIN_PASSWORD=040126
+- DEFAULT_CLIENT_PASSWORD=402365
+- MONITORING_INGEST_TOKEN=token usado pelos agentes de monitoramento
+
+> Segurança: mantenha `CORS_ORIGINS` apontando para o domínio Vercel oficial em produção. O suporte a previews `*.vercel.app` continua ativo por padrão para facilitar testes.
 
 ## Deploy no Render
 Build Command:

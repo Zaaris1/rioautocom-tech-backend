@@ -2,6 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models import (
     User,
@@ -68,11 +69,11 @@ def create_user(body: UserCreate, db: Session = Depends(get_db), _: User = Depen
 
     password = body.password
     if body.role == ROLE_CLIENT and not password:
-        password = "402365"
+        password = settings.default_client_password
     if body.role == ROLE_TECH and not password:
         raise HTTPException(status_code=400, detail="Técnico precisa de senha")
     if body.role == ROLE_ADMIN and not password:
-        password = "040126"
+        password = settings.default_admin_password
 
     user = User(
         id=str(uuid.uuid4()),
