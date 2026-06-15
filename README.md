@@ -1,76 +1,20 @@
+# RioAutocom tech — App único (PWA)
 
-# RioAutocom Tech — Backend FINAL (MVP completo)
+App único (cliente / técnico / admin). A UI muda conforme o `role` retornado no `/auth/login`.
 
-API para:
-- Admin Web (gestão)
-- App Técnico (atendimento)
-- App Cliente (consulta)
-
-## Stack
-- FastAPI
-- PostgreSQL (Neon)
-- SQLAlchemy 2.x
-- JWT
-- Driver Postgres: psycopg (v3) — compatível com Python 3.13 (Render)
-
-## Admin inicial (seed)
-- username: admin
-- password: 040126
-
-> Recomendação: após logar, use `/auth/change-password` e troque a senha do admin.
-
-## Variáveis de ambiente (Render)
-Obrigatórias:
-- DATABASE_URL  (string do Neon; pode ser `postgresql://...`)
-- SECRET_KEY    (chave do JWT com pelo menos 24 caracteres; a API não inicia sem isso)
-
-Opcionais:
-- ALGORITHM=HS256
-- ACCESS_TOKEN_EXPIRE_DAYS=180
-- ACCESS_TOKEN_EXPIRE_MINUTES=259200
-- CORS_ORIGINS=https://atendimento-rioautocom.vercel.app
-- CORS_ALLOW_VERCEL_PREVIEWS=true
-- DEFAULT_ADMIN_PASSWORD=040126
-- DEFAULT_CLIENT_PASSWORD=402365
-- MONITORING_INGEST_TOKEN=token usado pelos agentes de monitoramento
-
-> Segurança: mantenha `CORS_ORIGINS` apontando para o domínio Vercel oficial em produção. O suporte a previews `*.vercel.app` continua ativo por padrão para facilitar testes.
-
-## Deploy no Render
-Build Command:
-```
-pip install -r requirements.txt
-```
-Start Command:
-```
-uvicorn app.main:app --host 0.0.0.0 --port 10000
+## Rodar local
+```bash
+npm install
+npm run dev
 ```
 
-## Regras do seu negócio (implementadas)
-- Cliente só consulta (não cria/edita chamados).
-- Chamado só é criado por ADMIN.
-- Técnico pode:
-  - ver ABERTO (fila) e assumir (vira ATRIBUIDO)
-  - iniciar (EM_ATENDIMENTO)
-  - pendenciar (PENDENTE)
-  - concluir (CONCLUIDO) **somente com parecer obrigatório**
-- Tudo gera `ticket_updates` (auditoria).
+Opcional: crie um `.env` (copie de `.env.example`) e ajuste:
+- `VITE_API_BASE=https://rioautocom-tech-backend.onrender.com`
 
-## Convenções
-Status:
-- ABERTO
-- ATRIBUIDO
-- EM_ATENDIMENTO
-- PENDENTE
-- CONCLUIDO
-- CANCELADO
+## Instalar como App (PWA)
+- Android (Chrome): menu ⋮ → **Adicionar à tela inicial**
+- iPhone (Safari): compartilhar → **Adicionar à Tela de Início**
 
-Prioridade:
-- Normal
-- Urgente
-
-Tipo:
-- Reparo
-- Instalação
-- Serviço
-- Visita técnica
+## Deploy rápido (Vercel)
+- Suba este projeto no GitHub → importe no Vercel
+- Em Environment Variables: `VITE_API_BASE = https://rioautocom-tech-backend.onrender.com`
