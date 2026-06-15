@@ -2,6 +2,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -24,12 +25,32 @@ def _normalize_anydesk_id(value: str) -> str:
     return cleaned
 
 
+def _digits(value: str | None) -> str:
+    return ID_PATTERN.sub("", (value or "").strip())
+
+
+def _digits_expr(column):
+    return func.replace(
+        func.replace(
+            func.replace(
+                func.replace(column, ".", ""),
+                "/",
+                "",
+            ),
+            "-",
+            "",
+        ),
+        " ",
+        "",
+    )
+
+
 @router.get("/", response_model=list[AnyDeskAccessOut])
 def list_anydesk_accesses(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles(ROLE_ADMIN)),
     store_id: str | None = Query(None),
-    q: str | None = Query(None, description="Buscar por loja, etiqueta, ID ou observação"),
+    q: str | None = Query(None, description="Buscar por loja, CNPJ, etiqueta, ID ou observação"),
 ):
     rows = db.query(AnyDeskAccess, Store.name.label("store_name")).join(Store, Store.id == AnyDeskAccess.store_id)
 
@@ -37,13 +58,25 @@ def list_anydesk_accesses(
         rows = rows.filter(AnyDeskAccess.store_id == store_id)
 
     if q:
-        term = f"%{q.strip()}%"
-        rows = rows.filter(
-            (Store.name.ilike(term))
-            | (AnyDeskAccess.label.ilike(term))
-            | (AnyDeskAccess.anydesk_id.ilike(term))
-            | (AnyDeskAccess.notes.ilike(term))
-        )
+        raw = q.strip()
+        term = f"%{raw}%"
+        digit_term = _digits(raw)
+        conditions = [
+            Store.name.ilike(term),
+            Store.cnpj.ilike(term),
+            AnyDeskAccess.label.ilike(term),
+            AnyDeskAccess.anydesk_id.ilike(term),
+            AnyDeskAccess.notes.ilike(term),
+        ]
+        if digit_term:
+            normalized_term = f"%{digit_term}%"
+            conditions.extend(
+                [
+                    _digits_expr(Store.cnpj).ilike(normalized_term),
+                    _digits_expr(AnyDeskAccess.anydesk_id).ilike(normalized_term),
+                ]
+            )
+        rows = rows.filter(or_(*conditions))
 
     rows = rows.order_by(Store.name.asc(), AnyDeskAccess.label.asc(), AnyDeskAccess.created_at.desc()).all()
 
