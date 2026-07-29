@@ -126,12 +126,14 @@ class TicketOut(BaseModel):
     requester_name: Optional[str] = None
     local: Optional[str] = None
     assigned_tech_id: Optional[str] = None
+    assigned_to: Optional[str] = None
     opened_at: Optional[str] = None
     updated_at: Optional[str] = None
+    resolution_text: Optional[str] = None
 
 
 class TicketDetail(TicketOut):
-    resolution_text: Optional[str] = None
+    pass
 
 
 class AssignRequest(BaseModel):

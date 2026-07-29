@@ -465,7 +465,17 @@ def list_tickets(
     if status and status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="status inválido")
 
-    q = db.query(Ticket, Store.name).join(Store, Store.id == Ticket.store_id)
+    q = (
+        db.query(
+            Ticket,
+            Store.name,
+            TicketClosure.resolution_text,
+            User.username,
+        )
+        .join(Store, Store.id == Ticket.store_id)
+        .outerjoin(TicketClosure, TicketClosure.ticket_id == Ticket.id)
+        .outerjoin(User, User.id == Ticket.assigned_tech_id)
+    )
 
     if store_id:
         q = q.filter(Ticket.store_id == store_id)
@@ -512,10 +522,12 @@ def list_tickets(
             problem=t.problem, type=t.type, priority=t.priority,
             requester_name=t.requester_name, local=t.local,
             assigned_tech_id=t.assigned_tech_id,
+            assigned_to=assigned_to,
             opened_at=t.opened_at.isoformat() if t.opened_at else None,
             updated_at=t.updated_at.isoformat() if t.updated_at else None,
+            resolution_text=resolution_text,
         )
-        for (t, store_name) in rows
+        for (t, store_name, resolution_text, assigned_to) in rows
     ]
 
 
@@ -540,6 +552,10 @@ def get_ticket(
         problem=t.problem, type=t.type, priority=t.priority,
         requester_name=t.requester_name, local=t.local,
         assigned_tech_id=t.assigned_tech_id,
+        assigned_to=(
+            db.query(User.username).filter(User.id == t.assigned_tech_id).scalar()
+            if t.assigned_tech_id else None
+        ),
         opened_at=t.opened_at.isoformat() if t.opened_at else None,
         updated_at=t.updated_at.isoformat() if t.updated_at else None,
         resolution_text=closure.resolution_text if closure else None,
