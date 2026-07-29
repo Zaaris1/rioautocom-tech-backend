@@ -1,5 +1,6 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -17,7 +18,7 @@ from app.models import (
 from app.schemas import (
     UserCreate, UserUpdate, UserOut,
     StoreCreate, StoreUpdate, StoreOut,
-    NetworkCreate, NetworkOut
+    NetworkCreate, NetworkUpdate, NetworkOut
 )
 from app.security import hash_password
 from app.deps import require_roles
@@ -58,6 +59,39 @@ def list_networks(
 ):
     rows = db.query(Network).order_by(Network.active.desc(), Network.name).all()
     return [NetworkOut(id=n.id, name=n.name, active=n.active) for n in rows]
+
+
+@router.patch("/networks/{network_id}", response_model=NetworkOut)
+def update_network(
+    network_id: str,
+    body: NetworkUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(ROLE_ADMIN)),
+):
+    network = db.query(Network).filter(Network.id == network_id).first()
+    if not network:
+        raise HTTPException(status_code=404, detail="Rede não encontrada")
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Nome inválido")
+        duplicate = (
+            db.query(Network)
+            .filter(func.lower(Network.name) == name.lower(), Network.id != network.id)
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="Já existe uma rede com esse nome")
+        network.name = name
+
+    if body.active is not None:
+        network.active = body.active
+
+    db.add(network)
+    db.commit()
+    db.refresh(network)
+    return NetworkOut(id=network.id, name=network.name, active=network.active)
 
 
 # -------- Users --------

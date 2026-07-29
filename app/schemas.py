@@ -27,6 +27,11 @@ class NetworkCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
 
 
+class NetworkUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    active: Optional[bool] = None
+
+
 class NetworkOut(BaseModel):
     id: str
     name: str
