@@ -306,3 +306,27 @@ class ClientSubscription(Base):
 Index("ix_client_subscriptions_client_user_id", ClientSubscription.client_user_id)
 Index("ix_client_subscriptions_status", ClientSubscription.status)
 Index("ix_client_subscriptions_next_due_date", ClientSubscription.next_due_date)
+
+
+# =========================
+# Tarefas operacionais
+# =========================
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(String, primary_key=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="PENDENTE")
+    due_at = Column(DateTime(timezone=True), nullable=True)
+    assigned_tech_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+Index("ix_tasks_status", Task.status)
+Index("ix_tasks_assigned_tech_id", Task.assigned_tech_id)
+Index("ix_tasks_due_at", Task.due_at)
+

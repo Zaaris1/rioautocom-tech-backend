@@ -448,3 +448,37 @@ class MySubscriptionOut(BaseModel):
     next_due_date: Optional[str] = None
     trial_until: Optional[str] = None
     message: Optional[str] = None
+
+
+# ---------- Tarefas ----------
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=180)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    due_at: Optional[datetime] = None
+    assigned_tech_id: Optional[str] = None
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=3, max_length=180)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    due_at: Optional[datetime] = None
+    assigned_tech_id: Optional[str] = None
+
+
+class TaskStatusUpdate(BaseModel):
+    status: str = Field(min_length=3, max_length=30)
+
+
+class TaskOut(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = None
+    status: str
+    due_at: Optional[str] = None
+    assigned_tech_id: Optional[str] = None
+    assigned_to: Optional[str] = None
+    created_by_user_id: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
