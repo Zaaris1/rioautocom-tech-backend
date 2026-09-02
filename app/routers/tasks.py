@@ -30,9 +30,13 @@ def _out(task: Task, assigned_to: str | None = None) -> TaskOut:
 def _get_assignee(db: Session, user_id: str | None) -> User | None:
     if not user_id:
         return None
-    user = db.query(User).filter(User.id == user_id, User.role == ROLE_TECH, User.active.is_(True)).first()
+    user = (
+        db.query(User)
+        .filter(User.id == user_id, User.role.in_([ROLE_TECH, ROLE_ADMIN]), User.active.is_(True))
+        .first()
+    )
     if not user:
-        raise HTTPException(status_code=400, detail="Técnico responsável inválido")
+        raise HTTPException(status_code=400, detail="Responsável inválido ou inativo")
     return user
 
 
@@ -106,4 +110,3 @@ def update_task_status(task_id: str, body: TaskStatusUpdate, db: Session = Depen
     db.refresh(task)
     assignee = db.query(User).filter(User.id == task.assigned_tech_id).first() if task.assigned_tech_id else None
     return _out(task, assignee.username if assignee else None)
-
