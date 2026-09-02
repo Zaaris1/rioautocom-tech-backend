@@ -5,13 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_user, require_roles
+from app.deps import require_roles
 from app.models import Task, User, ROLE_ADMIN, ROLE_TECH
-from app.schemas import TaskCreate, TaskOut, TaskStatusUpdate, TaskUpdate
+from app.schemas import TaskAssigneeOut, TaskCreate, TaskOut, TaskStatusUpdate, TaskUpdate
 
 router = APIRouter()
 
 VALID_STATUSES = {"PENDENTE", "EM_ANDAMENTO", "CONCLUIDA", "CANCELADA"}
+ASSIGNEE_ROLES = [ROLE_TECH, ROLE_ADMIN]
 
 
 def _iso(value):
@@ -32,12 +33,26 @@ def _get_assignee(db: Session, user_id: str | None) -> User | None:
         return None
     user = (
         db.query(User)
-        .filter(User.id == user_id, User.role.in_([ROLE_TECH, ROLE_ADMIN]), User.active.is_(True))
+        .filter(User.id == user_id, User.role.in_(ASSIGNEE_ROLES), User.active.is_(True))
         .first()
     )
     if not user:
         raise HTTPException(status_code=400, detail="Responsável inválido ou inativo")
     return user
+
+
+@router.get("/assignees", response_model=list[TaskAssigneeOut])
+def list_task_assignees(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(ROLE_ADMIN)),
+):
+    rows = (
+        db.query(User)
+        .filter(User.role.in_(ASSIGNEE_ROLES), User.active.is_(True))
+        .order_by(User.role, User.username)
+        .all()
+    )
+    return [TaskAssigneeOut(id=u.id, username=u.username, role=u.role, active=u.active) for u in rows]
 
 
 @router.get("/", response_model=list[TaskOut])
