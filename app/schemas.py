@@ -259,19 +259,6 @@ class MonitoringCertificateItemIn(BaseModel):
     status: Optional[str] = None
 
 
-class MonitoringCertificateHeartbeatIn(BaseModel):
-    store_id: Optional[str] = None
-    store_cnpj: Optional[str] = None
-    store_name: Optional[str] = None
-    checked_at: Optional[str] = None
-    status: Optional[str] = None
-    summary: Optional[str] = None
-    message: Optional[str] = None
-    alert_days: Optional[int] = None
-    agent_version: Optional[str] = None
-    items: list[MonitoringCertificateItemIn] = Field(default_factory=list)
-
-
 class MonitoringItemOut(BaseModel):
     name: str
     ip: str
@@ -295,8 +282,7 @@ class MonitoringStoreOut(BaseModel):
     cnpj: str
     network_id: Optional[str] = None
     network_name: Optional[str] = None
-    status: str
-    reported_status: Optional[str] = None
+    status: str = "SEM_DADOS"
     up_count: int = 0
     down_count: int = 0
     total_count: int = 0
@@ -469,6 +455,13 @@ class TaskStatusUpdate(BaseModel):
     status: str = Field(min_length=3, max_length=30)
 
 
+class TaskAssigneeOut(BaseModel):
+    id: str
+    username: str
+    role: str
+    active: bool
+
+
 class TaskOut(BaseModel):
     id: str
     title: str
@@ -481,4 +474,3 @@ class TaskOut(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     completed_at: Optional[str] = None
-
