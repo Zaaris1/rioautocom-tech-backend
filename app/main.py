@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.seed import seed_data
-from app.routers import auth, stores, tickets, admin, networks, accesses, monitoring, billing
+from app.routers import auth, stores, tickets, admin, networks, accesses, monitoring, billing, tasks
 
 
 @asynccontextmanager
@@ -47,3 +47,5 @@ app.include_router(tickets.router, prefix="/tickets", tags=["Tickets"])
 app.include_router(accesses.router, prefix="/accesses", tags=["Acessos"])
 app.include_router(monitoring.router, prefix="/monitoring", tags=["Monitoring"])
 app.include_router(billing.router, prefix="/billing", tags=["Billing"])
+app.include_router(tasks.router, prefix="/tasks", tags=["Tarefas"])
+
