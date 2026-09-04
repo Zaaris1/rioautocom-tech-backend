@@ -36,7 +36,7 @@ def require_secret_key(value: str | None) -> str:
 
 class Settings:
     app_name = "RioAutocom Tech API"
-    app_version = os.getenv("APP_VERSION", "1.0.4-structural-ui")
+    app_version = os.getenv("APP_VERSION", "1.0.5-tasks-api")
     database_url = normalize_database_url(os.getenv("DATABASE_URL"))
     secret_key = require_secret_key(os.getenv("SECRET_KEY"))
     algorithm = os.getenv("ALGORITHM", "HS256")
