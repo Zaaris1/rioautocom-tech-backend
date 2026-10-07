@@ -259,6 +259,19 @@ class MonitoringCertificateItemIn(BaseModel):
     status: Optional[str] = None
 
 
+class MonitoringCertificateHeartbeatIn(BaseModel):
+    store_id: Optional[str] = None
+    store_cnpj: Optional[str] = None
+    store_name: Optional[str] = None
+    checked_at: Optional[str] = None
+    status: Optional[str] = None
+    summary: Optional[str] = None
+    message: Optional[str] = None
+    alert_days: Optional[int] = None
+    agent_version: Optional[str] = None
+    items: list[MonitoringCertificateItemIn] = Field(default_factory=list)
+
+
 class MonitoringItemOut(BaseModel):
     name: str
     ip: str
