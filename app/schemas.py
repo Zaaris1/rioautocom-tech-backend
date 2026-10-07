@@ -47,7 +47,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    password: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=4, max_length=128)
     must_change_password: Optional[bool] = None
     active: Optional[bool] = None
 
